@@ -1,0 +1,34 @@
+# Datasets, training runs and model files: the models and the dataset are
+# published on Hugging Face, not in git (see README).
+data/
+runs/
+*.pt
+*.onnx
+*.pkl
+
+# Real photos are for local testing only and never go anywhere public.
+real/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+dist/
+
+.DS_Store
+.env*
+
+# Test renders copied for the browser check (scripts/web_reference.py)
+web/public/check/
+
+# Exported models (python/scripts/export_onnx.py); published on Hugging Face
+web/public/models/
+
+# ONNX Runtime, copied from node_modules by scripts/copy-ort.mjs
+web/public/ort/
+*.tsbuildinfo

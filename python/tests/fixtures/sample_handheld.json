@@ -1,0 +1,712 @@
+{
+ "id": "syn_0000006",
+ "image": "images/syn_0000006.jpg",
+ "version": "0.1.0",
+ "seed": 6,
+ "mode": "handheld",
+ "width": 1280,
+ "height": 720,
+ "scramble": "F2 B2 D' F' L' B' F' D2 F R' L D R U2 L R' U' F D2 U L2 F2 U' R2 U",
+ "cube": {
+  "finish": "glossy",
+  "type": "sticker",
+  "palette": "muted",
+  "bevelRadius": 0.06,
+  "stickerMargin": 0.84,
+  "centerRounding": 0.08,
+  "logo": true,
+  "orientation": [
+   0.7071067811865475,
+   0,
+   0,
+   0.7071067811865475
+  ]
+ },
+ "camera": {
+  "fov": 58.473191319964826,
+  "distance": 8.208370096024753,
+  "roll": 98.63284385763109,
+  "fill": 0.49991752707284653,
+  "position": [
+   -5.7927442428226685,
+   -3.019227474909168,
+   4.970484807874563
+  ],
+  "quaternion": [
+   -0.24473127336780984,
+   -0.3926145244686516,
+   0.7087098052944586,
+   0.532626370818715
+  ]
+ },
+ "lighting": {
+  "keyKelvin": 5262,
+  "keyIntensity": 1.0218017929233612,
+  "ambient": 0.6737531887018122,
+  "environment": "studio",
+  "envIntensity": 0.6634681500145234,
+  "exposure": 1.0104579979553818,
+  "toneMapping": "aces",
+  "shadows": true
+ },
+ "background": {
+  "kind": "procedural:stripes",
+  "table": null
+ },
+ "occluders": {
+  "fingers": 3,
+  "frontFingers": 2,
+  "palm": false
+ },
+ "labels": {
+  "facelets": "LLRRUBRFLDDFRRULDRFDBBFBDUDRLFRDRLDBBFUBLUFUBDFUFBLULU",
+  "keypoints": [
+   [
+    766.2082291257382,
+    491.4682334210251,
+    2
+   ],
+   [
+    553.2355460276705,
+    476.17020886336405,
+    2
+   ],
+   [
+    554.381902816606,
+    294.3911240585003,
+    2
+   ],
+   [
+    608.8391877468531,
+    128.9827560548383,
+    1
+   ],
+   [
+    830.6719925496095,
+    182.18147239277536,
+    2
+   ],
+   [
+    900.5989670767353,
+    373.5005289455488,
+    1
+   ],
+   [
+    623.4582061668572,
+    333.9308137215779,
+    2
+   ]
+  ],
+  "visibleFaces": [
+   "U",
+   "F",
+   "L"
+  ],
+  "bbox": [
+   553.2355460276705,
+   128.9827560548383,
+   900.5989670767353,
+   491.4682334210251
+  ],
+  "corners": [
+   {
+    "name": "UFR",
+    "x": 553.2355460276705,
+    "y": 476.17020886336405,
+    "inFrame": true,
+    "occluded": false
+   },
+   {
+    "name": "UBR",
+    "x": 766.2082291257382,
+    "y": 491.4682334210251,
+    "inFrame": true,
+    "occluded": false
+   },
+   {
+    "name": "DFR",
+    "x": 554.381902816606,
+    "y": 294.3911240585003,
+    "inFrame": true,
+    "occluded": false
+   },
+   {
+    "name": "DBR",
+    "x": 732.974885140756,
+    "y": 322.36123040141666,
+    "inFrame": true,
+    "occluded": false
+   },
+   {
+    "name": "UFL",
+    "x": 623.4582061668572,
+    "y": 333.9308137215779,
+    "inFrame": true,
+    "occluded": false
+   },
+   {
+    "name": "UBL",
+    "x": 900.5989670767353,
+    "y": 373.5005289455488,
+    "inFrame": true,
+    "occluded": true
+   },
+   {
+    "name": "DFL",
+    "x": 608.8391877468531,
+    "y": 128.9827560548383,
+    "inFrame": true,
+    "occluded": true
+   },
+   {
+    "name": "DBL",
+    "x": 830.6719925496095,
+    "y": 182.18147239277536,
+    "inFrame": true,
+    "occluded": false
+   }
+  ],
+  "stickers": [
+   {
+    "facelet": 0,
+    "color": "L",
+    "x": 833.4925605743808,
+    "y": 393.33506781329663,
+    "facing": 0.4859636682809881,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 1,
+    "color": "L",
+    "x": 787.5997394231124,
+    "y": 437.5478145707883,
+    "facing": 0.4423955684459062,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 2,
+    "color": "R",
+    "x": 750.0919580117188,
+    "y": 473.6824866039427,
+    "facing": 0.4032410455099656,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 3,
+    "color": "R",
+    "x": 749.2177450998497,
+    "y": 382.63102291857604,
+    "facing": 0.5232418677228377,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 4,
+    "color": "U",
+    "x": 710.2845655713477,
+    "y": 429.75146817023125,
+    "facing": 0.4699636247334932,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 5,
+    "color": "B",
+    "x": 678.7252666068198,
+    "y": 467.9473781125464,
+    "facing": 0.4237870071174828,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 6,
+    "color": "R",
+    "x": 656.9702374222719,
+    "y": 370.9143379511046,
+    "facing": 0.5558975660356156,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 7,
+    "color": "F",
+    "x": 626.4524641702725,
+    "y": 421.29796455058585,
+    "facing": 0.4931970191862226,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 8,
+    "color": "L",
+    "x": 601.9343618730913,
+    "y": 461.77637366872574,
+    "facing": 0.4405865839017583,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 9,
+    "color": "D",
+    "x": 590.4884341845775,
+    "y": 444.29166351850745,
+    "facing": -0.853159591164926,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 10,
+    "color": "D",
+    "x": 661.8798543872613,
+    "y": 450.5895159220621,
+    "facing": -0.8251281094426408,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 11,
+    "color": "F",
+    "x": 728.5960424745314,
+    "y": 456.4749389085855,
+    "facing": -0.7902248639002409,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 12,
+    "color": "R",
+    "x": 588.5390357331893,
+    "y": 380.6342476721729,
+    "facing": -0.805219212495281,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 13,
+    "color": "R",
+    "x": 655.6067123932521,
+    "y": 388.5677696848065,
+    "facing": -0.7815263589509761,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 14,
+    "color": "U",
+    "x": 718.5438107501233,
+    "y": 396.01268026008,
+    "facing": -0.7516767331041024,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 15,
+    "color": "L",
+    "x": 586.8222471876807,
+    "y": 324.5726855611349,
+    "facing": -0.7562633397674342,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 16,
+    "color": "D",
+    "x": 650.0597000137213,
+    "y": 333.7251733420589,
+    "facing": -0.7365328018386401,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 17,
+    "color": "R",
+    "x": 709.6213288374838,
+    "y": 342.3456514868859,
+    "facing": -0.7113883664124458,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 18,
+    "color": "F",
+    "x": 606.1167868579089,
+    "y": 324.00448146959843,
+    "facing": 0.2382429666441992,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 19,
+    "color": "D",
+    "x": 581.617436169147,
+    "y": 378.44706382778105,
+    "facing": 0.21243198950552086,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 20,
+    "color": "B",
+    "x": 561.8518543927812,
+    "y": 422.370240706538,
+    "facing": 0.19048852806057998,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 21,
+    "color": "B",
+    "x": 602.3085841915102,
+    "y": 251.458332772382,
+    "facing": 0.21589672896840822,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 22,
+    "color": "F",
+    "x": 579.9998083381214,
+    "y": 309.05496657773193,
+    "facing": 0.19613363564515662,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 23,
+    "color": "B",
+    "x": 561.7112195764756,
+    "y": 356.27231084815423,
+    "facing": 0.17847248962463974,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 24,
+    "color": "D",
+    "x": 599.078613480363,
+    "y": 189.9274858019559,
+    "facing": 0.1955608212199466,
+    "inFrame": true,
+    "visibleFraction": 0.1111111111111111,
+    "visible": false
+   },
+   {
+    "facelet": 25,
+    "color": "U",
+    "x": 578.6051525131061,
+    "y": 249.2277981873059,
+    "facing": 0.18051232932584596,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 26,
+    "color": "D",
+    "x": 561.5883332745574,
+    "y": 298.51612800437096,
+    "facing": 0.16646179519547347,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 27,
+    "color": "R",
+    "x": 636.1239821933947,
+    "y": 171.48698355508495,
+    "facing": -0.7790809518004879,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 28,
+    "color": "L",
+    "x": 613.4048915756896,
+    "y": 229.49996837961496,
+    "facing": -0.7252934490395462,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 29,
+    "color": "F",
+    "x": 594.3488676426888,
+    "y": 278.15934677830586,
+    "facing": -0.6738536662507633,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 30,
+    "color": "R",
+    "x": 710.0442949578331,
+    "y": 187.9257896708911,
+    "facing": -0.7520372423568271,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 31,
+    "color": "D",
+    "x": 681.800911478523,
+    "y": 242.64246166035784,
+    "facing": -0.7033223390799056,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 32,
+    "color": "R",
+    "x": 657.9736568262383,
+    "y": 288.8036476306442,
+    "facing": -0.6561244220744149,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 33,
+    "color": "L",
+    "x": 778.8511918506168,
+    "y": 203.2274462135958,
+    "facing": -0.7185763855570294,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 34,
+    "color": "D",
+    "x": 745.8541789923995,
+    "y": 254.95048249412386,
+    "facing": -0.6757241932583408,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 35,
+    "color": "B",
+    "x": 717.8652049964203,
+    "y": 298.8233846767917,
+    "facing": -0.6335476057754262,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 36,
+    "color": "B",
+    "x": 847.5527965227097,
+    "y": 329.0436421394151,
+    "facing": 0.6056619576802769,
+    "inFrame": true,
+    "visibleFraction": 0.1111111111111111,
+    "visible": false
+   },
+   {
+    "facelet": 37,
+    "color": "F",
+    "x": 762.6799388520823,
+    "y": 315.2352368162659,
+    "facing": 0.652958336751425,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 38,
+    "color": "U",
+    "x": 669.6537530748946,
+    "y": 300.1003242643283,
+    "facing": 0.6945448874781939,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 39,
+    "color": "B",
+    "x": 825.0730417987627,
+    "y": 259.6753609329021,
+    "facing": 0.5581814636580126,
+    "inFrame": true,
+    "visibleFraction": 0.7777777777777778,
+    "visible": true
+   },
+   {
+    "facelet": 40,
+    "color": "L",
+    "x": 746.1624659911522,
+    "y": 244.07052531306067,
+    "facing": 0.5945467494256366,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 41,
+    "color": "U",
+    "x": 660.3155115141409,
+    "y": 227.0939971434542,
+    "facing": 0.6254273915349782,
+    "inFrame": true,
+    "visibleFraction": 0.6666666666666666,
+    "visible": true
+   },
+   {
+    "facelet": 42,
+    "color": "F",
+    "x": 805.8507168706949,
+    "y": 200.35889340789294,
+    "facing": 0.5129052553175596,
+    "inFrame": true,
+    "visibleFraction": 1,
+    "visible": true
+   },
+   {
+    "facelet": 43,
+    "color": "U",
+    "x": 732.1316393729585,
+    "y": 183.61940565073868,
+    "facing": 0.5406887424653385,
+    "inFrame": true,
+    "visibleFraction": 0.5555555555555556,
+    "visible": false
+   },
+   {
+    "facelet": 44,
+    "color": "B",
+    "x": 652.4400571746232,
+    "y": 165.523733406356,
+    "facing": 0.563600908913755,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 45,
+    "color": "D",
+    "x": 776.2623662659115,
+    "y": 443.23010170396606,
+    "facing": -0.4974434669193601,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 46,
+    "color": "F",
+    "x": 814.2671289151851,
+    "y": 406.1178235681312,
+    "facing": -0.540505671525503,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 47,
+    "color": "U",
+    "x": 860.2687699975049,
+    "y": 361.1964616244454,
+    "facing": -0.5869252681888815,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 48,
+    "color": "F",
+    "x": 763.0542681031054,
+    "y": 382.08511151974113,
+    "facing": -0.47243147531401636,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 49,
+    "color": "B",
+    "x": 797.3605880557457,
+    "y": 342.0042294580857,
+    "facing": -0.5088430234160342,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 50,
+    "color": "L",
+    "x": 838.3592632558419,
+    "y": 294.1045110491253,
+    "facing": -0.5469994295019645,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 51,
+    "color": "U",
+    "x": 751.365097057414,
+    "y": 327.9717758948442,
+    "facing": -0.44641313444000963,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 52,
+    "color": "L",
+    "x": 782.5603162239172,
+    "y": 285.878104733146,
+    "facing": -0.47674926958251257,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   },
+   {
+    "facelet": 53,
+    "color": "U",
+    "x": 819.4274544053472,
+    "y": 236.13095652434683,
+    "facing": -0.507696500987849,
+    "inFrame": true,
+    "visibleFraction": 0,
+    "visible": false
+   }
+  ]
+ }
+}

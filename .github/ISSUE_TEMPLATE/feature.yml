@@ -1,0 +1,10 @@
+name: Idea
+description: Suggest a feature or a new puzzle
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea, and what it would help with
+    validations:
+      required: true

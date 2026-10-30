@@ -1,0 +1,35 @@
+name: Wrong verdict
+description: CubeCheck said correct for a mis-scramble, or mis-scramble for a correct one
+labels: [wrong-verdict]
+body:
+  - type: markdown
+    attributes:
+      value: "**Never post a scramble that is still going to be used in a competition.**"
+  - type: input
+    id: scramble
+    attributes:
+      label: Scramble
+      placeholder: "R U R' U' F2 D' L B2 ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: What happened
+      options:
+        - The cube was scrambled correctly, CubeCheck said mis-scramble
+        - The cube was mis-scrambled, CubeCheck said correct
+        - It kept saying re-check
+        - It didn't find the cube
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 140 on a Pixel 8
+  - type: textarea
+    id: details
+    attributes:
+      label: Light, cube and anything else
+      description: Daylight or lamp? Stickered or stickerless? A screenshot helps.
