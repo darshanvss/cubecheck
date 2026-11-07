@@ -175,6 +175,8 @@ export class Follower {
   private back = 0;
   private half = false;
   private path = new Set<string>(); // the cubes along the way back shown (see show)
+  /** Why the last look changed nothing: "few" stickers seen, or "off" the scramble (no point or nearby slip fits); null: it counted. */
+  why: "few" | "off" | null = null;
 
   constructor(scramble: string, n: number, { after = 6, before = 2, jump = 0.02, temper = 3, minSeen = 0.3, maxCost = 0.6, minEvidence = 8, confirm = 2 }: FollowOptions = {}) {
     this.n = n;
@@ -248,7 +250,11 @@ export class Follower {
   /** Update with one look: the reader's (3N² x 7) probabilities and which stickers are in view. */
   look(probs: ArrayLike<number>, inside: boolean[], covered = 0.5): Report {
     const unknown = inside.map((v, i) => !v || probs[7 * i + 6] > covered), seen = unknown.filter((u) => !u).length;
-    if (seen < this.minSeen * inside.length) return this.report(false);
+    this.why = null;
+    if (seen < this.minSeen * inside.length) {
+      this.why = "few";
+      return this.report(false);
+    }
     let f = this.fits(probs, unknown, this.points);
     const half = new Float64Array(f.length).fill(Infinity); // halfway through move k's half turn, as point k
     if (this.halves.size) {
@@ -277,7 +283,10 @@ export class Follower {
       }
     }
     this.streak = 0;
-    if (fmin / seen > this.maxCost) return this.report(false); // nothing fits: mid-turn, glare, another puzzle
+    if (fmin / seen > this.maxCost) {
+      this.why = "off"; // nothing fits: mid-turn, glare, another puzzle, or a cube that isn't on this scramble at all
+      return this.report(false);
+    }
     if (this.mistake) {
       // Back on track (undone, or never wrong), once it's held.
       this.back++;

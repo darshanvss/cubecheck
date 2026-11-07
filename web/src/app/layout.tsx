@@ -10,7 +10,7 @@ const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-geist-mono" 
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://check.cubing.in"),
-  title: { default: "CubeCheck: check a scramble with your camera", template: "%s · CubeCheck" },
+  title: { default: "CubeCheck", template: "%s · CubeCheck" },
   description: "Show a scrambled cube, 2×2 to 7×7, to your camera and see whether it matches the scramble. Paste scrambles or open a TNoodle PDF. Runs entirely on your device.",
   applicationName: "CubeCheck",
 };

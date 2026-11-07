@@ -204,8 +204,9 @@ export function byEvent(sets: ScrambleSet[]): EventSets[] {
   return [...out.values()].sort((a, b) => rank(a.event) - rank(b.event));
 }
 
-/** An event as people write it: "3x3x3" -> "3×3", "4x4x4 Blindfolded" -> "4×4 Blindfolded". */
-export const eventName = (event: string) => event.replace(/^(\d)x\1x\1/, "$1×$1");
+/** An event as people write it: "3x3x3" -> "3×3", "4x4x4 Blindfolded" -> "4×4 Blindfolded", "Fewest Moves" -> "3×3 Fewest Moves". */
+export const eventName = (event: string) =>
+  event.replace(/^Fewest Moves$/, "3x3x3 Fewest Moves").replace(/ Multiple Blindfolded$/, " Multi-Blind").replace(/^(\d)x\1x\1/, "$1×$1");
 
 /** A short name for a set: "Round 1 · Group A", "Round 2" (a round of one group says no group), "Round 1 · Group A · Attempt 2". */
 export const setName = (s: ScrambleSet) =>

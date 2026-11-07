@@ -1,6 +1,6 @@
 # Follow-along (beta)
 
-Follow-along watches the scrambler turn the cube, from solved, and keeps track of where in the scramble they are. When a move goes wrong it says so at once, names the likely slip, and shows the way back. It's off by default: turn it on with **Try follow-along (beta)** under the scramble list, then pick **Follow along** and the scramble to follow.
+Follow-along watches the scrambler turn the cube, from solved, and keeps track of where in the scramble they are. When a move goes wrong it says so at once, names the likely slip, and shows the way back. Pick **Follow along** at the top of the page, then the scramble to follow. There's no start-over button: a solved cube puts it back at the first move by itself, and once a scramble is done, the next solved cube moves on to the next scramble.
 
 The code is `web/src/lib/follow.ts`, a port of `python/cubecheck/follow.py`. `web/tests/follow.test.ts` feeds both the same 329 simulated looks and checks the reports agree at every one.
 

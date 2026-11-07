@@ -14,7 +14,7 @@
 - **Every WCA cube event from 2×2 to 7×7.** The size is told from the moves (or picked by hand).
 - **TNoodle PDFs.** Open a group's Computer Display PDF (with its passcode) or the printing PDF (with the competition password), then pick the event, round and group. The PDF is read in the browser and kept only in memory. A PDF that isn't a TNoodle scramble sheet is refused.
 - **Checks against the whole list.** It finds which scramble the cube in view matches, or says it matches none.
-- **Follow-along (beta, off by default).** It follows one scramble move by move from solved, says the moment a move goes wrong, and shows the way back. See [docs/follow-along.md](docs/follow-along.md).
+- **Follow-along (beta).** It follows one scramble move by move from solved, says the moment a move goes wrong, and shows the way back. See [docs/follow-along.md](docs/follow-along.md).
 
 ## How it works
 
