@@ -2,11 +2,19 @@
 
 Everything the models learn from is synthetic: 3D renders of 2×2 to 7×7 cubes in randomised rooms, with labels computed from the scene, so they're exact.
 
-> The dataset is not published yet. It will be released once it covers more puzzles. This page describes the version the published models (c7 and r4) were trained on.
+The dataset is on Hugging Face: **[darshanvss/cubecheck](https://huggingface.co/datasets/darshanvss/cubecheck)** (CC BY 4.0), 180,200 renders, about 19 GB. Release `v1.0` is exactly what the published models (c7 and r4) were trained on. Other puzzles will be added as new subsets.
+
+```sh
+cd python
+uv run --extra models python scripts/download_dataset.py                    # everything, into data/raw/
+uv run --extra models python scripts/download_dataset.py 444 333/test-full-v1   # or some sizes and sets
+```
+
+Or read it straight from the Hub, without unpacking: `load_dataset("darshanvss/cubecheck", "4x4", split="test")` from the `datasets` library. On the Hub there's one subset per cube size (`2x2` … `7x7`, and `no-cube`) with a train and a test split, stored as WebDataset shards of about 1 GB: `data/<size>/<set>-NNNN.tar`, each render's `.jpg` next to its `.json`.
 
 ## What's in it
 
-Sets are named by cube size (`222` … `777`, as WCA event ids) and kind, in `data/raw/<size>/<set>`. Numbers are renders per size.
+Sets are named by cube size (`222` … `777`, as WCA event ids) and kind; `download_dataset.py` unpacks them to `data/raw/<size>/<set>`. Numbers are renders per size.
 
 | Set | Renders | What it's for |
 | --- | --- | --- |
@@ -26,7 +34,7 @@ The "no cube" sets are kept separate so they're easy to skip, but a model needs 
 
 - The cube size, the scramble and the full cube state (6N² stickers, Kociemba order U R F D L B).
 - The 7 visible corners (P1–P6 around the outside, C in the middle) in pixels, each marked visible, covered or outside the frame. In an exactly-two-face view both ends of the shared edge are fair answers for C, and training accepts either.
-- Every visible sticker: its colour, its outline, and how much of it is covered.
+- Every sticker: its colour, its centre in pixels, whether it faces the camera, and how much of it is covered (its outline follows from the corners: the stickers are a regular grid between them).
 - Camera, lighting and scene settings, so results can be broken down by condition.
 
 Camera effects (blur, noise, JPEG, white balance, exposure) are **not** baked in: training adds a fresh random set each time a render is used (`python/cubecheck/degrade.py`). The corner model's training also paints fingers on: one to three over a corner (`--fingers`), or a row of three or four across a whole outer edge (`--edge-grip`), the way a hand really grips a cube. The labels stay where the corners really are, so the model learns that a corner is where the cube's edges meet, not where the fingers start.
@@ -34,5 +42,5 @@ Camera effects (blur, noise, JPEG, white balance, exposure) are **not** baked in
 ## Where the pictures come from
 
 - Cubes, hands and fingers are rendered.
-- Room backgrounds and table tops are CC0 photos from [Poly Haven](https://polyhaven.com) (indoor panoramas and surface textures). The source list will ship with the dataset.
+- Room backgrounds and table tops are CC0 photos from [Poly Haven](https://polyhaven.com) (indoor panoramas and surface textures). Their authors are listed in the dataset's `sources.json`.
 - The training images are synthetic renders. The dataset contains no photographs of people and no camera photographs of real cubes. Real webcam photos used for testing are not published; only their scores are.
