@@ -40,22 +40,25 @@ def face_maps(img_bgr: np.ndarray, keypoints: np.ndarray, size: int = FACE_PX) -
     return np.stack(out)
 
 
-def cell_labels(sample: dict, keypoints: np.ndarray) -> np.ndarray:
-    """What the reader should answer for each of the 27 cells, from the dataset's sticker labels."""
+def cell_labels(sample: dict, keypoints: np.ndarray, n: int = 3) -> np.ndarray:
+    """What the reader should answer for each of the 3N² cells, from the dataset's sticker labels."""
+    from .nxn_check import cell_centres as grid_centres
+
     stickers = [s for s in sample["labels"]["stickers"] if s["facing"] > 0]
     xy = np.array([[s["x"], s["y"]] for s in stickers])
-    reach = 0.4 * cube_size(keypoints) / 3  # under half a sticker from the cell centre
-    out = np.full(27, IGNORE)
-    for n, c in enumerate(cell_centres(keypoints)):
+    reach = 0.4 * cube_size(keypoints) / n  # under half a sticker from the cell centre
+    out = np.full(3 * n * n, IGNORE)
+    centres = cell_centres(keypoints) if n == 3 else grid_centres(keypoints, n)
+    for cell, c in enumerate(centres):
         d = np.linalg.norm(xy - c, axis=1)
         k = int(d.argmin())
         s = stickers[k]
         if d[k] > reach or not s["inFrame"] or s["facing"] < 0.1:
             continue
         if s["visibleFraction"] >= 0.6:
-            out[n] = FACES.index(s["color"])
+            out[cell] = FACES.index(s["color"])
         elif s["visibleFraction"] < 0.4:
-            out[n] = COVERED
+            out[cell] = COVERED
     return out
 
 
@@ -90,9 +93,63 @@ def to_tensor(maps: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(maps).movedim(-1, -3).float() / 255.0
 
 
-def load_reader(path: str, device: str = "cpu") -> StickerReader:
+class GridReader(nn.Module):
+    """The sticker reader for any N×N cube (2 to 7).
+
+    The same network as StickerReader, with one change. Each face is straightened
+    to N×24 pixels (24 per sticker, as before), and the same convolution layers
+    shrink it 24 times, so they give one feature vector per sticker at any size;
+    r2's layers load unchanged. StickerReader learned 27 fixed "where am I"
+    vectors, one per 3x3 cell. Here a small network computes that from where the
+    sticker is: which face, how far along and down it (0..1), whether it's on the
+    face's edge or corner, and whether it's an odd cube's fixed middle sticker.
+    """
+
+    def __init__(self, width: int = 128, layers: int = 2) -> None:
+        super().__init__()
+        r2 = StickerReader(width, layers)
+        self.cnn, self.mix, self.head = r2.cnn, r2.mix, r2.head
+        self.place = nn.Sequential(nn.Linear(len(self.places(3)[0]), width), nn.GELU(), nn.Linear(width, width))
+        self._cache: dict[tuple[int, str], torch.Tensor] = {}
+
+    @staticmethod
+    def places(n: int) -> list[list[float]]:
+        """What the position network is told about each of the 3N² cells (face k, row j, column i)."""
+        out = []
+        for k in range(3):
+            for j in range(n):
+                for i in range(n):
+                    u, v = (i + 0.5) / n, (j + 0.5) / n
+                    waves = [f(np.pi * m * t) for m in (1, 2, 3) for t in (u, v) for f in (np.sin, np.cos)]
+                    edges = [i == 0, i == n - 1, j == 0, j == n - 1]
+                    middle = n % 2 == 1 and i == n // 2 and j == n // 2
+                    out.append([float(k == 0), float(k == 1), float(k == 2), u, v, *waves, *map(float, edges), float(middle), 1 / n])
+        return out
+
+    def forward(self, faces: torch.Tensor) -> torch.Tensor:
+        """faces: (B, 3, 3, N*24, N*24) floats in 0..1 -> logits (B, 3N², 7)."""
+        b, n = faces.shape[0], faces.shape[-1] // 24
+        x = self.cnn(faces.flatten(0, 1))  # (B*3, C, N, N)
+        x = x.flatten(2).transpose(1, 2).reshape(b, 3 * n * n, -1)
+        key = (n, str(faces.device))
+        if key not in self._cache:
+            self._cache[key] = torch.tensor(self.places(n), dtype=faces.dtype, device=faces.device)
+        x = self.mix(x + self.place(self._cache[key]))
+        return self.head(x)
+
+    @classmethod
+    def from_r2(cls, path: str, device: str = "cpu") -> GridReader:
+        """Start from a trained StickerReader: its convolution, mixing and answer layers carry over."""
+        ckpt = torch.load(path, map_location=device)
+        model = cls(**ckpt["config"])
+        missing, unexpected = model.load_state_dict({k: v for k, v in ckpt["model"].items() if k != "position"}, strict=False)
+        assert not unexpected and all(k.startswith("place.") for k in missing), (missing, unexpected)
+        return model.to(device)
+
+
+def load_reader(path: str, device: str = "cpu") -> StickerReader | GridReader:
     ckpt = torch.load(path, map_location=device)
-    model = StickerReader(**ckpt["config"])
+    model = (GridReader if ckpt.get("grid") else StickerReader)(**ckpt["config"])
     model.load_state_dict(ckpt["model"])
     return model.to(device).eval()
 
@@ -101,4 +158,11 @@ def load_reader(path: str, device: str = "cpu") -> StickerReader:
 def read_stickers(model: StickerReader, img_bgr: np.ndarray, keypoints: np.ndarray, device: str = "cpu") -> np.ndarray:
     """Probabilities (27, 7) for one image and its 7 corners."""
     x = to_tensor(face_maps(img_bgr, keypoints))[None].to(device)
+    return torch.softmax(model(x), dim=-1)[0].cpu().numpy()
+
+
+@torch.no_grad()
+def read_grid(model: GridReader, img_bgr: np.ndarray, keypoints: np.ndarray, n: int, device: str = "cpu") -> np.ndarray:
+    """Probabilities (3N², 7) for one image of an N×N cube and its 7 corners."""
+    x = to_tensor(face_maps(img_bgr, keypoints, 24 * n))[None].to(device)
     return torch.softmax(model(x), dim=-1)[0].cpu().numpy()

@@ -1,4 +1,4 @@
-"""The corner model: finds the 7 corners of a 3x3 cube in a photo (plain PyTorch).
+"""Our own corner model: finds the 7 cube corners without Ultralytics.
 
 Two passes of the same small network design, trained separately:
 
@@ -15,10 +15,13 @@ grid cells, so it is finer than the 4-pixel grid. See docs/how-it-works.md.
 
 Is there a cube at all? Both networks also give a cube-present score, from 0
 to 1. Since c2 both learned it from renders of the same rooms with the cube
-hidden (the dataset's "no cube" renders), so a cube counts when the finder says so for the
+hidden (generator --empty), so a cube counts when the finder says so for the
 whole frame, the refiner agrees on its close-up crop, and the three faces come
 out as proper four-sided shapes. On the test renders that finds 99.6% of cubes
-and calls none in 300 frames without one. (c1 learned "no cube" only from
+and calls none in 300 frames without one. The finder's bar is higher (0.75):
+real frames showed it half-believing a patterned curtain (0.5 to 0.7), which
+the refiner then confirmed, while on the test renders a bar up to 0.8 loses
+no cubes. (c1 learned "no cube" only from
 zoomed-in patches, so it said "cube" for any whole frame, 1.00 even for plain
 grey; its refiner's score means nothing.)
 """
@@ -36,7 +39,8 @@ from .keypoints import FACE_QUADS, FLIP_IDX
 IN_PX = 256  # network input, square
 HEAT_PX = 64  # heatmap grid: one cell per 4 input pixels
 REFINE_MARGIN = 1.35  # refiner crop side = this x the corners' bounding box
-MIN_PRESENT = 0.5  # cube-present score, from both the finder and the refiner
+MIN_PRESENT = 0.5  # cube-present score, from the refiner
+MIN_FIND = 0.75  # the finder's own bar, before the refiner gets a look
 
 
 def _conv(cin: int, cout: int, stride: int = 1) -> nn.Sequential:
@@ -94,16 +98,30 @@ def soft_argmax(heat: torch.Tensor) -> torch.Tensor:
     return torch.stack([(p.sum(2) * xs).sum(-1), (p.sum(3) * ys).sum(-1)], dim=-1)
 
 
-def cube_shaped(kp: np.ndarray) -> bool:
-    """The three faces are convex quads, all turning the same way, as any view of a real cube gives."""
+def cube_shaped(kp: np.ndarray, two_faces: bool = False) -> bool:
+    """The three faces are convex quads, all turning the same way, as any corner view of a real cube gives.
+
+    two_faces also accepts a view of exactly two faces (looking at an edge): those two convex
+    and turning the same way, the third seen from behind (turning the other way) or edge-on
+    (almost no area). Only for corner models trained on such views (CornerFinder.two_faces).
+    """
     turns = []
     for quad in FACE_QUADS:
         pts = kp[list(quad)]
         edges = np.roll(pts, -1, axis=0) - pts
         nxt = np.roll(edges, -1, axis=0)
         turns.append(edges[:, 0] * nxt[:, 1] - edges[:, 1] * nxt[:, 0])
-    turns = np.concatenate(turns)
-    return bool(np.all(turns > 0) or np.all(turns < 0))
+    if np.all(np.concatenate(turns) > 0) or np.all(np.concatenate(turns) < 0):
+        return True
+    if not two_faces:
+        return False
+    sign = [1 if np.all(t > 0) else -1 if np.all(t < 0) else 0 for t in turns]
+    area = [abs(cv2.contourArea(kp[list(q)].astype(np.float32))) for q in FACE_QUADS]
+    for third in range(3):
+        a, b = [f for f in range(3) if f != third]
+        if sign[a] != 0 and sign[a] == sign[b] and sign[third] != sign[a] and min(area[a], area[b]) > 0.2 * max(area):
+            return True
+    return False
 
 
 # --- geometry: every crop is an affine map from the image to the 256 x 256 input ---
@@ -168,8 +186,9 @@ FLIP = np.array(FLIP_IDX)
 class CornerFinder:
     """Finder + refiner together: image in, 7 corners out."""
 
-    def __init__(self, finder: CornerNet, refiner: CornerNet, device: str = "cpu", passes: int = 2) -> None:
+    def __init__(self, finder: CornerNet, refiner: CornerNet, device: str = "cpu", passes: int = 2, two_faces: bool = False) -> None:
         self.finder, self.refiner, self.device, self.passes = finder.eval(), refiner.eval(), device, passes
+        self.two_faces = two_faces  # the refiner was trained on views of exactly two faces (cube_shaped)
 
     @classmethod
     def load(cls, finder_path: str, refiner_path: str, device: str = "cpu") -> CornerFinder:
@@ -179,7 +198,7 @@ class CornerFinder:
             net = CornerNet(**ckpt["config"])
             net.load_state_dict(ckpt["model"])
             nets.append(net.to(device))
-        return cls(*nets, device=device)
+        return cls(*nets, device=device, two_faces=bool(ckpt.get("two_faces", False)))
 
     @torch.no_grad()
     def _run(self, net: CornerNet, img: np.ndarray, m: np.ndarray) -> tuple[np.ndarray, float]:
@@ -188,23 +207,34 @@ class CornerFinder:
         xy = soft_argmax(heat)[0].cpu().numpy() * IN_PX
         return apply(invert(m), xy), float(torch.sigmoid(present)[0])
 
-    @staticmethod
-    def _checked(kp: np.ndarray, present: float, min_present: float) -> tuple[np.ndarray, float] | None:
-        return (kp, present) if present >= min_present and cube_shaped(kp) else None
+    def _checked(self, kp: np.ndarray, present: float, min_present: float) -> tuple[np.ndarray, float] | None:
+        return (kp, present) if present >= min_present and cube_shaped(kp, self.two_faces) else None
 
     def find(self, img_bgr: np.ndarray, min_present: float = MIN_PRESENT,
-             steps: list[dict] | None = None) -> tuple[np.ndarray, float] | None:
+             steps: list[dict] | None = None, min_find: float = MIN_FIND, zoom: float = 0.0) -> tuple[np.ndarray, float] | None:
         """(7, 2) corner positions in the image and the refiner's cube-present score, or None when there's no cube.
 
         Pass a list as steps to get each network's view of the image (its 4 corners in the
         image), corners and cube-present score, to show how the answer was reached.
+        min_find is the finder's own bar on the whole frame; min_present the refiner's.
+        zoom (e.g. 2): when the finder is under its bar, look again at a square 1/zoom of the
+        frame's short side around its rough guess. A cube small in the frame is only ~20 px
+        across in the finder's whole-frame view; on real frames a 2x closer look raised its
+        score from 0.34 to 0.93 (median).
         """
         views = [full_view(img_bgr.shape)]
         kp, present = self._run(self.finder, img_bgr, views[0])
+        if zoom and present < min_find:
+            closer = view_matrix(kp.mean(0), min(img_bgr.shape[:2]) / zoom)
+            kp2, present2 = self._run(self.finder, img_bgr, closer)
+            if present2 > present:
+                views[0], kp, present = closer, kp2, present2
         for n in range(self.passes + 1):
             if steps is not None:
                 square = apply(invert(views[-1]), np.float32([[0, 0], [IN_PX, 0], [IN_PX, IN_PX], [0, IN_PX]]))
                 steps.append({"net": "refiner" if n else "finder", "view": square, "corners": kp, "present": present})
+            if n == 0 and present < min_find:
+                return None
             if present < min_present or n == self.passes:
                 break
             views.append(refine_view(kp))

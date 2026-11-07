@@ -197,6 +197,10 @@ class Alternatives:
 
     states: np.ndarray  # (M, 54)
     slips: list[str]
+    # The same slips for drawing: {"move": 0-based index into the scramble, "kind": "skipped", "wrong",
+    # "swapped" (with the next move) or "extra" (inserted before "move"; len(moves) = at the end),
+    # "done": the turn made instead, for "wrong" and "extra"}
+    where: list[dict] = field(default_factory=list)
 
 
 def single_slips(scramble: str) -> Alternatives:
@@ -206,28 +210,30 @@ def single_slips(scramble: str) -> Alternatives:
     """
     moves = parse_scramble(scramble)
     base = apply(SOLVED, moves).tobytes()
-    seen, states, slips = {base}, [], []
+    seen, states, slips, where = {base}, [], [], []
 
-    def add(variant: list[str], text: str) -> None:
+    def add(variant: list[str], text: str, move: int, kind: str, done: str | None = None) -> None:
         st = apply(SOLVED, variant)
         key = st.tobytes()
         if key not in seen:
             seen.add(key)
             states.append(st)
             slips.append(text)
+            where.append({"move": move, "kind": kind, "done": done})
 
     turns = [f + m for f in FACES for m in ("", "'", "2")]
     for i, m in enumerate(moves):
-        add(moves[:i] + moves[i + 1 :], f"move {i + 1} ({m}) skipped")
+        add(moves[:i] + moves[i + 1 :], f"move {i + 1} ({m}) skipped", i, "skipped")
         for t in turns:
             if t != m:
-                add(moves[:i] + [t] + moves[i + 1 :], f"move {i + 1} done as {t} instead of {m}")
+                add(moves[:i] + [t] + moves[i + 1 :], f"move {i + 1} done as {t} instead of {m}", i, "wrong", t)
         if i + 1 < len(moves):
-            add(moves[:i] + [moves[i + 1], m] + moves[i + 2 :], f"moves {i + 1} and {i + 2} swapped")
+            add(moves[:i] + [moves[i + 1], m] + moves[i + 2 :], f"moves {i + 1} and {i + 2} swapped", i, "swapped")
     for i in range(len(moves) + 1):
         for t in turns:
-            add(moves[:i] + [t] + moves[i:], f"extra {t} before move {i + 1}" if i < len(moves) else f"extra {t} at the end")
-    return Alternatives(np.array(states), slips)
+            add(moves[:i] + [t] + moves[i:], f"extra {t} before move {i + 1}" if i < len(moves) else f"extra {t} at the end",
+                i, "extra", t)
+    return Alternatives(np.array(states), slips, where)
 
 
 def cell_centres(keypoints: np.ndarray) -> np.ndarray:
@@ -358,7 +364,10 @@ class Verdict:
     separation: float = 0.0
     hypothesis: int = -1
     slip: str = ""  # most likely slip, when one explains the photo
+    slip_where: dict = field(default_factory=dict)  # the same slip for drawing (Alternatives.where)
     evidence: float = 0.0  # how much better the best slip fits than the scramble as written
+    slip_seen: int = 0  # visible stickers that slip changes which the reader sees as wrong
+    slip_left: int = 0  # visible stickers that clearly disagree even with that slip
 
 
 def verify(
@@ -456,7 +465,7 @@ def verify(
             # Highlight exactly the stickers that slip changes.
             changed = (alternatives.states[k][cells] != expected) & ~unknown
             base.update(mismatches=np.flatnonzero(changed).tolist())
-            return Verdict("mis-scramble", "doesn't match the scramble", slip=alternatives.slips[k], **base)
+            return Verdict("mis-scramble", "doesn't match the scramble", slip=alternatives.slips[k], slip_where=alternatives.where[k], **base)
         if evidence > 0:
             best_labels = alternatives.states[k][cells]
 
@@ -489,6 +498,8 @@ def verify_probs(
     max_unknown: int = 13,
     unsure: float = 0.6,
     max_unsure: int = 9,
+    min_slip_seen: int = 3,
+    max_slip_left: int = 1,
 ) -> Verdict:
     """Like verify(), but from the sticker reader's probabilities (27, 7) instead of raw colours.
 
@@ -500,6 +511,12 @@ def verify_probs(
     is sure are wrong (probability of the expected colour under `sure`).
     More than `max_unsure` stickers with no colour above `unsure` means the
     photo isn't clear enough (glare, washed out): re-check. `rules` sets how the shown colours are chosen ("none", "pieces", "unique").
+    A slip only counts when at least `min_slip_seen` of the visible stickers it
+    changes look wrong to the reader (expected colour under 50%), so a couple of
+    misread stickers can't add up to a confident slip on their own. The slip is
+    only named (slip, slip_where) when it explains the photo: at most
+    `max_slip_left` stickers still clearly disagree with it. Otherwise the cube
+    is called mis-scrambled without guessing how.
     """
     unknown = ~inside | (probs[:, 6] > covered)
     if unknown.sum() > max_unknown:
@@ -534,10 +551,15 @@ def verify_probs(
         k = int(np.argmin(slips))
         evidence = float(fits[best] - slips[k])
         base.update(evidence=round(evidence, 2))
-        if evidence > min_evidence:
-            changed = (alternatives.states[k][cells] != expected) & ~unknown
+        changed = (alternatives.states[k][cells] != expected) & ~unknown
+        seen = int((changed & (colour[np.arange(27), expected] < 0.5)).sum())
+        left = int((~unknown & (colour[np.arange(27), alternatives.states[k][cells]] < sure)).sum())
+        base.update(slip_seen=seen, slip_left=left)
+        if evidence > min_evidence and seen >= min_slip_seen:
+            if left > max_slip_left:  # wrong, but that slip doesn't explain the photo either: don't name it
+                return Verdict("mis-scramble", "doesn't match the scramble", **base)
             base.update(mismatches=np.flatnonzero(changed).tolist())
-            return Verdict("mis-scramble", "doesn't match the scramble", slip=alternatives.slips[k], **base)
+            return Verdict("mis-scramble", "doesn't match the scramble", slip=alternatives.slips[k], slip_where=alternatives.where[k], **base)
     if mismatch.sum() >= min_mismatches:
         return Verdict("mis-scramble", "doesn't match the scramble", **base)
     return Verdict("correct", "matches the scramble", **base)

@@ -1,7 +1,7 @@
 """Camera effects and view cutting on the GPU, for training the corner model.
 
 Preparing a training picture on the CPU (decode, camera effects, cut-out) cost
-more than the GPU's work, so on RunPod the GPU sat mostly idle (docs/training.md).
+more than the GPU's work, so on RunPod the GPU sat mostly idle.
 Here the work is split:
 
 - CPU, in the data workers: work out which part of the frame the view needs
