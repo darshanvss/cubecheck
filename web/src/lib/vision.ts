@@ -1,8 +1,10 @@
 // The corner model and sticker reader in the browser, with ONNX Runtime Web: on the GPU through
 // WebGPU where the browser has it, otherwise on the CPU. Each step mirrors python/cubecheck
-// (corners.py, reader.py); the /test page checks the answers against Python's.
+// (corners.py, reader.py); the /test page checks the answers against Python's. There is one sticker
+// reader file per cube size (reader-N.onnx), loaded the first time that size is read.
 import type * as Ort from "onnxruntime-web";
 import { FACE_QUADS, squareToQuad, type Point } from "./check";
+import { faceWindings } from "./nxn-check";
 
 type OrtModule = typeof Ort;
 declare global {
@@ -12,11 +14,17 @@ declare global {
 }
 
 export interface Meta {
+  corners: string;
+  reader: string;
   in_px: number;
-  face_px: number;
+  sticker_px: number; // each face is straightened to this many pixels per sticker
+  sizes: number[]; // cube sizes with a reader
   refine_margin: number;
   passes: number;
   min_present: number;
+  min_find: number; // the finder's own bar on the whole frame
+  zoom: number; // when the finder is under its bar, look again this much closer (0: don't)
+  two_faces: boolean; // the corner model was trained on views of exactly two faces
   classes: string;
 }
 
@@ -25,7 +33,7 @@ export interface Models {
   meta: Meta;
   finder: Ort.InferenceSession;
   refiner: Ort.InferenceSession;
-  reader: Ort.InferenceSession;
+  reader: (n: number) => Promise<Ort.InferenceSession>; // the sticker reader for an N×N cube
   backend: "webgpu" | "wasm";
 }
 
@@ -68,7 +76,14 @@ async function openModels(base: string, backend: Models["backend"]): Promise<Mod
     return ort.InferenceSession.create(new Uint8Array(bytes), options);
   };
   // One at a time: creating them together while the WebGPU backend starts up fails.
-  const finder = await open("finder"), refiner = await open("refiner"), reader = await open("reader");
+  const finder = await open("finder"), refiner = await open("refiner");
+  const readers = new Map<number, Promise<Ort.InferenceSession>>();
+  const reader = (n: number) => {
+    if (!meta.sizes.includes(n)) return Promise.reject(new Error(`no sticker reader for ${n}×${n}`));
+    if (!readers.has(n)) readers.set(n, open(`reader-${n}`));
+    return readers.get(n)!;
+  };
+  await reader(3);
   return { ort, meta, finder, refiner, reader, backend };
 }
 
@@ -81,6 +96,7 @@ export interface View {
 }
 
 const fullView = (w: number, h: number): View => ({ cx: w / 2, cy: h / 2, side: Math.max(w, h) });
+const mean = (pts: Point[]): Point => [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
 
 function refineView(corners: Point[], margin: number): View {
   const xs = corners.map((p) => p[0]), ys = corners.map((p) => p[1]);
@@ -128,17 +144,28 @@ async function runCorners(models: Models, net: Ort.InferenceSession, source: Can
   return { corners, present: (out.present.data as Float32Array)[0], view: v };
 }
 
-/** The three faces are convex quads, all turning the same way, as any real view of a cube gives. */
-export function cubeShaped(kp: Point[]): boolean {
-  const turns: number[] = [];
-  for (const quad of FACE_QUADS) {
+/**
+ * The three faces are convex quads, all turning the same way, as any corner view of a real cube gives.
+ * twoFaces also accepts a view of exactly two faces (looking at an edge): those two convex and turning
+ * the same way, the third seen from behind (turning the other way) or edge-on (almost no area).
+ */
+export function cubeShaped(kp: Point[], twoFaces = false): boolean {
+  const turns = FACE_QUADS.map((quad) => {
     const pts = quad.map((j) => kp[j]);
-    for (let i = 0; i < 4; i++) {
+    return [0, 1, 2, 3].map((i) => {
       const [a, b, c] = [pts[i], pts[(i + 1) % 4], pts[(i + 2) % 4]];
-      turns.push((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]));
-    }
-  }
-  return turns.every((t) => t > 0) || turns.every((t) => t < 0);
+      return (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    });
+  });
+  const all = turns.flat();
+  if (all.every((t) => t > 0) || all.every((t) => t < 0)) return true;
+  if (!twoFaces) return false;
+  const sign = turns.map((t) => (t.every((v) => v > 0) ? 1 : t.every((v) => v < 0) ? -1 : 0));
+  const area = faceWindings(kp).map(Math.abs);
+  return [0, 1, 2].some((third) => {
+    const [a, b] = [0, 1, 2].filter((f) => f !== third);
+    return sign[a] !== 0 && sign[a] === sign[b] && sign[third] !== sign[a] && Math.min(area[a], area[b]) > 0.2 * Math.max(...area);
+  });
 }
 
 export interface Found {
@@ -148,27 +175,36 @@ export interface Found {
 }
 
 /**
- * Finder on the whole frame, then the refiner on close-ups (corners.find). With `previous` (last
- * frame's corners) it first tries one refiner pass around them and skips the finder (corners.track).
+ * Finder on the whole frame, then the refiner on close-ups (corners.find). When the finder is under its
+ * bar, it looks again 2× closer around its rough guess: a cube small in the frame is only ~20 px across
+ * in the whole-frame view. With `previous` (last frame's corners) it first tries one refiner pass around
+ * them and skips the finder (corners.track).
  */
 export async function findCube(models: Models, source: Source, previous: Point[] | null = null, canvas = document.createElement("canvas")): Promise<Found> {
-  const { passes, refine_margin: margin, min_present: min } = models.meta;
+  const { passes, refine_margin: margin, min_present: min, min_find: minFind, zoom, two_faces: twoFaces } = models.meta;
+  const shaped = (kp: Point[]) => cubeShaped(kp, twoFaces);
   if (previous) {
     const step = await runCorners(models, models.refiner, source, refineView(previous, margin), canvas);
-    if (step.present >= min && cubeShaped(step.corners)) return { steps: [{ net: "refiner", ...step }], corners: step.corners, present: step.present };
+    if (step.present >= min && shaped(step.corners)) return { steps: [{ net: "refiner", ...step }], corners: step.corners, present: step.present };
   }
   let step = await runCorners(models, models.finder, source, fullView(source.width, source.height), canvas);
+  if (zoom && step.present < minFind) {
+    const [cx, cy] = mean(step.corners);
+    const closer = await runCorners(models, models.finder, source, { cx, cy, side: Math.min(source.width, source.height) / zoom }, canvas);
+    if (closer.present > step.present) step = closer;
+  }
   const steps: Step[] = [{ net: "finder", ...step }];
+  if (step.present < minFind) return { steps, corners: null, present: step.present };
   for (let n = 0; n < passes && step.present >= min; n++) {
     step = await runCorners(models, models.refiner, source, refineView(step.corners, margin), canvas);
     steps.push({ net: "refiner", ...step });
   }
-  const ok = steps.length > passes && step.present >= min && cubeShaped(step.corners);
+  const ok = steps.length > passes && step.present >= min && shaped(step.corners);
   return { steps, corners: ok ? step.corners : null, present: step.present };
 }
 
 // Straighten each face to size x size like OpenCV's warpPerspective (bilinear, black outside the frame).
-function faceMaps(frame: ImageData, corners: Point[], size: number): Float32Array {
+export function faceMaps(frame: ImageData, corners: Point[], size: number): Float32Array {
   const n = size * size, out = new Float32Array(3 * 3 * n), { data, width: W, height: H } = frame;
   const px = (x: number, y: number, ch: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : data[4 * (y * W + x) + ch]);
   FACE_QUADS.forEach((quad, f) => {
@@ -188,11 +224,11 @@ function faceMaps(frame: ImageData, corners: Point[], size: number): Float32Arra
   return out;
 }
 
-/** 27 x 7 probabilities, row-major: face k, row j, column i; the 6 colours (URFDLB), then covered. */
-export async function readStickers(models: Models, frame: ImageData, corners: Point[]): Promise<Float32Array> {
-  const size = models.meta.face_px;
+/** 3N² x 7 probabilities, row-major: face k, row j, column i; the 6 colours (URFDLB), then covered. */
+export async function readStickers(models: Models, frame: ImageData, corners: Point[], n = 3): Promise<Float32Array> {
+  const size = models.meta.sticker_px * n, reader = await models.reader(n);
   const faces = new models.ort.Tensor("float32", faceMaps(frame, corners, size), [1, 3, 3, size, size]);
-  return (await models.reader.run({ faces })).probs.data as Float32Array;
+  return (await reader.run({ faces })).probs.data as Float32Array;
 }
 
 /** The whole frame's pixels, for readStickers. */

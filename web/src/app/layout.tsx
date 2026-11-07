@@ -13,8 +13,8 @@ const CLOUDFLARE_WEB_ANALYTICS_TOKEN = "b42534b5cd704d278979482a3a53f569";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://check.cubing.in"),
-  title: { default: "CubeCheck: check a scramble with your camera", template: "%s · CubeCheck" },
-  description: "Show a scrambled 3×3 to your camera and see whether it matches the scramble. Runs entirely on your device.",
+  title: { default: "CubeCheck", template: "%s · CubeCheck" },
+  description: "Show a scrambled cube, 2×2 to 7×7, to your camera and see whether it matches the scramble. Paste scrambles or open a TNoodle PDF. Runs entirely on your device.",
   applicationName: "CubeCheck",
 };
 

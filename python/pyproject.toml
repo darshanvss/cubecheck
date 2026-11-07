@@ -1,7 +1,7 @@
 [project]
 name = "cubecheck"
-version = "0.1.0"
-description = "Check a 3x3 scramble from one camera view: corner model, sticker reader and the cube rules"
+version = "0.2.0"
+description = "Check a 2x2 to 7x7 scramble from one camera view: corner model, sticker reader, the check and follow-along"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.11,<3.14"
