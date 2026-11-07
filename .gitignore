@@ -29,6 +29,7 @@ web/public/check/
 # Exported models (python/scripts/export_onnx.py); published on Hugging Face
 web/public/models/
 
-# ONNX Runtime, copied from node_modules by scripts/copy-ort.mjs
+# ONNX Runtime and pdf.js, copied from node_modules by scripts/copy-ort.mjs
 web/public/ort/
+web/public/pdfjs/
 *.tsbuildinfo

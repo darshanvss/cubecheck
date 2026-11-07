@@ -74,40 +74,51 @@ export function parseScramble(text: string): string[] {
 
 export const expectedState = (scramble: string) => apply(SOLVED, parseScramble(scramble));
 
+/** Where a slip is, for drawing: move is a 0-based index into the scramble ("extra" goes before it; the
+ * scramble's length = at the end), done is the turn made instead, for "wrong" and "extra". */
+export interface SlipWhere {
+  move: number;
+  kind: "skipped" | "wrong" | "swapped" | "extra";
+  done: string | null;
+}
+
 export interface Alternatives {
   states: State[];
   slips: string[];
+  where: SlipWhere[];
 }
 
 /** States from one human slip: a move skipped, changed, added, or two moves swapped. Each state once. */
 export function singleSlips(scramble: string): Alternatives {
   const moves = parseScramble(scramble);
-  const seen = new Set([apply(SOLVED, moves).join()]), out: Alternatives = { states: [], slips: [] };
-  const add = (variant: string[], text: string) => {
+  const seen = new Set([apply(SOLVED, moves).join()]), out: Alternatives = { states: [], slips: [], where: [] };
+  const add = (variant: string[], text: string, move: number, kind: SlipWhere["kind"], done: string | null = null) => {
     const st = apply(SOLVED, variant), k = st.join();
     if (!seen.has(k)) {
       seen.add(k);
       out.states.push(st);
       out.slips.push(text);
+      out.where.push({ move, kind, done });
     }
   };
   const turns = [...FACES].flatMap((f) => [f, `${f}'`, `${f}2`]);
   moves.forEach((m, i) => {
-    add([...moves.slice(0, i), ...moves.slice(i + 1)], `move ${i + 1} (${m}) skipped`);
-    for (const t of turns) if (t !== m) add([...moves.slice(0, i), t, ...moves.slice(i + 1)], `move ${i + 1} done as ${t} instead of ${m}`);
-    if (i + 1 < moves.length) add([...moves.slice(0, i), moves[i + 1], m, ...moves.slice(i + 2)], `moves ${i + 1} and ${i + 2} swapped`);
+    add([...moves.slice(0, i), ...moves.slice(i + 1)], `move ${i + 1} (${m}) skipped`, i, "skipped");
+    for (const t of turns) if (t !== m) add([...moves.slice(0, i), t, ...moves.slice(i + 1)], `move ${i + 1} done as ${t} instead of ${m}`, i, "wrong", t);
+    if (i + 1 < moves.length) add([...moves.slice(0, i), moves[i + 1], m, ...moves.slice(i + 2)], `moves ${i + 1} and ${i + 2} swapped`, i, "swapped");
   });
   for (let i = 0; i <= moves.length; i++) {
-    for (const t of turns) add([...moves.slice(0, i), t, ...moves.slice(i)], i < moves.length ? `extra ${t} before move ${i + 1}` : `extra ${t} at the end`);
+    for (const t of turns) add([...moves.slice(0, i), t, ...moves.slice(i)], i < moves.length ? `extra ${t} before move ${i + 1}` : `extra ${t} at the end`, i, "extra", t);
   }
   return out;
 }
 
 // --- orientation: which cube corner faces the camera, and which visible face is image face 0 ---
 
-const U_FLIP = [2, 0, 1], V_FLIP = [1, 2, 0];
+export const U_FLIP = [2, 0, 1], V_FLIP = [1, 2, 0];
 
-function hypotheses(): [V3, number[]][] {
+/** The 24 ways the cube can face the camera: the signs of the corner nearest it, and which axis each image face is on. */
+export function hypotheses(): [V3, number[]][] {
   const out: [V3, number[]][] = [];
   for (const s0 of [1, -1]) for (const s1 of [1, -1]) for (const s2 of [1, -1]) {
     const s: V3 = [s0, s1, s2], order = s0 * s1 * s2 > 0 ? [1, 0, 2] : [1, 2, 0];
@@ -177,7 +188,7 @@ const OPTIONS = pieceOptions();
 const SLOT_OF = new Map<number, string>();
 for (const [k, { slot }] of OPTIONS) for (const f of slot) SLOT_OF.set(f, k);
 
-const argmin = (row: ArrayLike<number>) => {
+export const argmin = (row: ArrayLike<number>) => {
   let best = 0;
   for (let i = 1; i < row.length; i++) if (row[i] < row[best]) best = i;
   return best;
@@ -255,16 +266,20 @@ export interface Verdict {
   hypothesis: number;
   fit: number; // how well the scramble as written fits the photo (lower is better)
   slip: string; // the most likely slip, when one explains the photo
+  slipWhere: SlipWhere | null;
   evidence: number;
+  slipSeen: number; // visible stickers that slip changes which the reader sees as wrong
+  slipLeft: number; // visible stickers that clearly disagree even with that slip
 }
 
-const blank = (status: Verdict["status"], reason: string, unknown: number[]): Verdict => ({
-  status, reason, unknown, mismatches: [], facelets: [], expected: "", observed: "", hypothesis: -1, fit: Infinity, slip: "", evidence: 0,
+export const blank = (status: Verdict["status"], reason: string, unknown: number[]): Verdict => ({
+  status, reason, unknown, mismatches: [], facelets: [], expected: "", observed: "", hypothesis: -1, fit: Infinity, slip: "", slipWhere: null,
+  evidence: 0, slipSeen: 0, slipLeft: 0,
 });
 
 /** Each cell's colour probabilities with "covered" left out, so the six colours add up to 1. */
-export const colourShares = (probs: ArrayLike<number>) =>
-  Array.from({ length: 27 }, (_, n) => {
+export const colourShares = (probs: ArrayLike<number>, cells = 27) =>
+  Array.from({ length: cells }, (_, n) => {
     let sum = 0;
     for (let c = 0; c < 6; c++) sum += probs[7 * n + c];
     return Array.from({ length: 6 }, (_, c) => probs[7 * n + c] / Math.max(sum, 1e-9));
@@ -273,13 +288,17 @@ export const colourShares = (probs: ArrayLike<number>) =>
 /** How surprising each colour would be in each cell: -log p, capped so one bad reading can't decide alone. */
 export const colourCosts = (colour: number[][], cap = 5) => colour.map((row) => row.map((p) => Math.min(-Math.log(Math.max(p, 1e-9)), cap)));
 
-/** verify.verify_probs: the reader's (27 x 7) probabilities against the state a scramble should give. */
+/**
+ * verify.verify_probs: the reader's (27 x 7) probabilities against the state a scramble should give.
+ * A slip counts only when at least minSlipSeen of the stickers it changes look wrong, and is named only
+ * when at most maxSlipLeft stickers still clearly disagree with it.
+ */
 export function verifyProbs(
   probs: ArrayLike<number>, // 27 x 7, row-major: 6 colours (URFDLB), then covered
   inside: boolean[],
   state: State,
   alternatives?: Alternatives,
-  { covered = 0.5, cap = 5, minEvidence = 8, sure = 0.05, minMismatches = 6, maxUnknown = 13, unsure = 0.6, maxUnsure = 9 } = {},
+  { covered = 0.5, cap = 5, minEvidence = 8, sure = 0.05, minMismatches = 6, maxUnknown = 13, unsure = 0.6, maxUnsure = 9, minSlipSeen = 3, maxSlipLeft = 1 } = {},
 ): Verdict {
   const P = (n: number, c: number) => probs[7 * n + c];
   const unknown = Array.from({ length: 27 }, (_, n) => !inside[n] || P(n, 6) > covered);
@@ -310,11 +329,15 @@ export function verifyProbs(
   };
   if (alternatives?.states.length) {
     const slips = alternatives.states.map((st) => rows.reduce((sum, n) => sum + cost[n][st[cells[n]]], 0));
-    const k = argmin(slips), evidence = fits[best] - slips[k];
+    const k = argmin(slips), evidence = fits[best] - slips[k], slipped = cells.map((f) => alternatives.states[k][f]);
+    const changed = slipped.flatMap((s, n) => (s !== expected[n] && !unknown[n] ? [n] : []));
     base.evidence = evidence;
-    if (evidence > minEvidence) {
-      const changed = cells.flatMap((f, n) => (alternatives.states[k][f] !== expected[n] && !unknown[n] ? [n] : []));
-      return { ...base, status: "mis-scramble", reason: "doesn't match the scramble", mismatches: changed, slip: alternatives.slips[k] };
+    base.slipSeen = changed.filter((n) => colour[n][expected[n]] < 0.5).length;
+    base.slipLeft = slipped.filter((s, n) => !unknown[n] && colour[n][s] < sure).length;
+    if (evidence > minEvidence && base.slipSeen >= minSlipSeen) {
+      // Wrong, but when that slip doesn't explain the photo either, it isn't named.
+      if (base.slipLeft > maxSlipLeft) return { ...base, status: "mis-scramble", reason: "doesn't match the scramble" };
+      return { ...base, status: "mis-scramble", reason: "doesn't match the scramble", mismatches: changed, slip: alternatives.slips[k], slipWhere: alternatives.where[k] };
     }
   }
   if (base.mismatches.length >= minMismatches) return { ...base, status: "mis-scramble", reason: "doesn't match the scramble" };

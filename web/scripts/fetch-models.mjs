@@ -4,8 +4,8 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 const repo = "darshanvss/cubecheck-3x3";
-const revision = "v0.1.0";
-const files = ["meta.json", "finder.onnx", "refiner.onnx", "reader.onnx"];
+const revision = "v0.2.0"; // c7 corners + r4 reader, one reader file per cube size
+const files = ["meta.json", "finder.onnx", "refiner.onnx", ...[2, 3, 4, 5, 6, 7].map((n) => `reader-${n}.onnx`)];
 
 const to = new URL("../public/models/", import.meta.url);
 mkdirSync(to, { recursive: true });
