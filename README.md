@@ -3,7 +3,7 @@
 **Check a scramble with a camera, for any cube from 2×2 to 7×7.** Paste the scrambles or open the competition's TNoodle PDF, show the scrambled cube with one corner pointing at the camera, and get **correct** or **mis-scramble**. No scanning face by face, no smart cube, and nothing leaves your device.
 
 [![Try it](https://img.shields.io/badge/try%20it-check.cubing.in-06b6d4)](https://check.cubing.in)
-[![Models on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20models-cubecheck--3x3-yellow)](https://huggingface.co/darshanvss/cubecheck-3x3)
+[![Models on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20models-cubecheck-yellow)](https://huggingface.co/darshanvss/cubecheck)
 [![CI](https://github.com/darshanvss/cubecheck/actions/workflows/ci.yml/badge.svg)](https://github.com/darshanvss/cubecheck/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
@@ -82,7 +82,7 @@ uv run python -m pytest
 
 ## Models
 
-The trained weights are on Hugging Face: [darshanvss/cubecheck-3x3](https://huggingface.co/darshanvss/cubecheck-3x3), as PyTorch weights (for Python and further training) and ONNX (for the browser). Each release is a tag (`v0.1.0`: c2 + r2, 3×3 only; `v0.2.0`: c7 + r4, every size), and the code pins the one it was tested with.
+The trained weights are on Hugging Face: [darshanvss/cubecheck](https://huggingface.co/darshanvss/cubecheck), as PyTorch weights (for Python and further training) and ONNX (for the browser). Each release is a tag (`v0.1.0`: c2 + r2, 3×3 only; `v0.2.0`: c7 + r4, every size), and the code pins the one it was tested with. (The repository was called `cubecheck-3x3` until v0.2.0; the old name redirects.)
 
 ## Train on your own data
 

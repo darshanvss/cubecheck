@@ -36,7 +36,7 @@ export default function About() {
         The networks learned from over a hundred thousand 3D renders of 2×2 to 7×7 cubes in rooms, in hands, under all kinds of light, with exact labels. On held-out renders the check calls the true scramble correct about 99% of the time on 2×2 to 5×5, with false alarms under 1%, and catches 97–100% of single slipped moves. 6×6 and 7×7, with their small stickers, say &ldquo;re-check&rdquo; more often (90–96% correct). Results on real photos come next.
       </p>
       <p className="mt-8 text-sm leading-relaxed text-muted-foreground">
-        CubeCheck helps the scrambler&rsquo;s own check; it isn&rsquo;t an official WCA tool. It&rsquo;s <a href="https://github.com/darshanvss/cubecheck" className="underline underline-offset-4 hover:text-foreground">open source</a> under the AGPL, and the models are on <a href="https://huggingface.co/darshanvss/cubecheck-3x3" className="underline underline-offset-4 hover:text-foreground">Hugging Face</a>.
+        CubeCheck helps the scrambler&rsquo;s own check; it isn&rsquo;t an official WCA tool. It&rsquo;s <a href="https://github.com/darshanvss/cubecheck" className="underline underline-offset-4 hover:text-foreground">open source</a> under the AGPL, and the models are on <a href="https://huggingface.co/darshanvss/cubecheck" className="underline underline-offset-4 hover:text-foreground">Hugging Face</a>.
       </p>
     </div>
   );

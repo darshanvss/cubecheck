@@ -8,7 +8,7 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-REPO = "darshanvss/cubecheck-3x3"
+REPO = "darshanvss/cubecheck"
 REVISION = "v0.2.0"  # a release tag, so a checkout gets the weights it was tested with
 
 
