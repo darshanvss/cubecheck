@@ -86,9 +86,9 @@ The trained weights are on Hugging Face: [darshanvss/cubecheck](https://huggingf
 
 ## Train on your own data
 
-The training dataset is not published yet; it will be once it covers more puzzles. All the training code is here, so the models can be trained on any data in the same format:
+The renders the models were trained on are on Hugging Face: [darshanvss/cubecheck](https://huggingface.co/datasets/darshanvss/cubecheck) (180,200 renders of 2×2 to 7×7 cubes and rooms with no cube, CC BY 4.0; `python/scripts/download_dataset.py` unpacks them into `data/raw/`). The training code works on any data in the same format:
 
-- a folder with `images/` (JPEG) and `labels/` (one JSON per image: the cube size, the scramble, the 7 corner positions with visibility, and each visible sticker's colour and outline). [`python/tests/fixtures/sample_handheld.json`](python/tests/fixtures/sample_handheld.json) is a full example, and `scripts/check_samples.py <folder>` checks a folder for label mistakes;
+- a folder with `images/` (JPEG) and `labels/` (one JSON per image: the cube size, the scramble, the 7 corner positions with visibility, and each sticker's colour, centre and visibility). [`python/tests/fixtures/sample_handheld.json`](python/tests/fixtures/sample_handheld.json) is a full example, and `scripts/check_samples.py <folder>` checks a folder for label mistakes;
 - a few thousand frames *without* a cube, so the models learn to say "no cube".
 
 Then follow [docs/training.md](docs/training.md). What the published models were trained on is described in [docs/dataset.md](docs/dataset.md).

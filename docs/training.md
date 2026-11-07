@@ -1,6 +1,6 @@
 # Training
 
-The networks train on the synthetic dataset ([dataset.md](dataset.md)). Commands run from `python/`, with the dataset unpacked in `data/raw/` at the repository root (`data/raw/<size>/<set>`).
+The networks train on the synthetic dataset ([dataset.md](dataset.md)). Commands run from `python/`, with the dataset unpacked in `data/raw/` at the repository root (`data/raw/<size>/<set>`): `uv run --extra models python scripts/download_dataset.py` downloads it from [Hugging Face](https://huggingface.co/datasets/darshanvss/cubecheck) and unpacks it there.
 
 Each published model was trained from the one before, so the history is a chain. The first trained from scratch; each later one starts from its parent's weights (`--init`) and only has to learn what's new.
 
