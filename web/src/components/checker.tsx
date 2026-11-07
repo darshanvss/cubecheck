@@ -24,6 +24,7 @@ const HOLD_CLEAR = 1500; // follow-along says it can't see the cube only after t
 // Longer than HOLD_CLEAR: a layer mid-turn fits nothing either.
 const HOLD_OFF = 2500;
 const MODE_KEY = "cubecheck-mode";
+const GRID_KEY = "cubecheck-grid"; // "off": no grid or sticker dots drawn on the cube
 
 // Smaller than this (the mean edge, in pixels), stickers are too few pixels to read.
 const minCubePx = (n: number) => (n === 3 ? 60 : PX_PER_STICKER * n);
@@ -60,7 +61,10 @@ export function Checker() {
   const [camera, setCamera] = useState<"off" | "starting" | "on" | "error">("off");
   const [photo, setPhoto] = useState<string | null>(null); // a photo checked instead of the camera
   const [cameraError, setCameraError] = useState("");
+  // Always mirrored, like looking in a mirror: the cube moves the way your hands do. Only a phone's back
+  // camera isn't (there the picture already matches what you see), so there's no switch for it.
   const [mirror, setMirror] = useState(true);
+  const [grid, setGrid] = useState(true); // the cube's outline, its sticker grid and the colours read, drawn on the picture
   const [frame, setFrame] = useState<Frame | null>(null);
   const [settled, setSettled] = useState<string>("");
 
@@ -95,6 +99,17 @@ export function Checker() {
       if (localStorage.getItem(MODE_KEY) === "follow") setMode("follow");
     } catch {}
   }, []);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(GRID_KEY) === "off") setGrid(false);
+    } catch {}
+  }, []);
+  const switchGrid = () => {
+    setGrid(!grid);
+    try {
+      localStorage.setItem(GRID_KEY, grid ? "off" : "on");
+    } catch {}
+  };
   const switchMode = (m: "check" | "follow") => {
     setMode(m);
     try {
@@ -276,7 +291,7 @@ export function Checker() {
     ? compared ? `Scramble ${compared.label}` : "From the scramble"
     : tracking ? (point === 0 ? "Should be: solved" : `Should be: after move ${point}`) : target ? `Scramble ${target.label}` : "From the scramble";
   const seen = now ? netFrom(now.verdict, frame!.n) : observed;
-  useEffect(() => drawOverlay(overlay.current, photo ? still.current : video.current, frame, !photo && mirror, !!marked), [frame, mirror, photo, marked]);
+  useEffect(() => drawOverlay(overlay.current, photo ? still.current : video.current, grid ? frame : null, !photo && mirror, !!marked), [frame, mirror, photo, marked, grid]);
 
   const listView = (
     <ol className="min-h-0 flex-1 space-y-1 overflow-y-auto">
@@ -361,16 +376,15 @@ export function Checker() {
                 {models ? `${models.backend === "webgpu" ? "GPU" : "CPU"}${frame ? ` · ${frame.ms.toFixed(0)} ms` : ""}` : "Loading…"}
               </span>
               <div className="flex gap-1.5">
-                {showing === "camera" && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button aria-label={mirror ? "Mirror: on" : "Mirror: off"} aria-pressed={mirror} onClick={() => setMirror(!mirror)} className={cn("grid size-8 place-items-center rounded-lg bg-black/55 text-white/80 hover:text-white", mirror && "text-white")}>
-                        <Icon d={<><path d="M12 3v18" strokeDasharray="2 2.5" /><path d="M9 7 4 17h5zM15 7l5 10h-5z" /></>} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Mirror {mirror ? "on" : "off"}</TooltipContent>
-                  </Tooltip>
-                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button aria-label={grid ? "Hide the grid on the cube" : "Show the grid on the cube"} aria-pressed={grid} onClick={switchGrid} className="grid size-8 place-items-center rounded-lg bg-black/55 text-white/80 hover:text-white">
+                      {/* a cube's corner with its grid; struck through while hidden */}
+                      <Icon d={<><path d="M12 3 4 7.5v9L12 21l8-4.5v-9z" /><path d="M12 12v9M12 12 4 7.5M12 12l8-4.5" />{!grid && <path d="M3 3l18 18" />}</>} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{grid ? "Hide the grid and colours drawn on the cube" : "Show the grid and colours on the cube"}</TooltipContent>
+                </Tooltip>
                 {photo && (
                   <Tooltip>
                     <TooltipTrigger asChild>
