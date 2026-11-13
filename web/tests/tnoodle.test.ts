@@ -120,3 +120,16 @@ test("a missing or wrong passcode is refused", { skip }, async () => {
   await assert.rejects(readTnoodlePdf(pdfjs, file.slice()), PasswordError);
   await assert.rejects(readTnoodlePdf(pdfjs, file.slice(), "wrongpass"), /wrong password/);
 });
+
+test("skewb and pyraminx sets in the All Scrambles PDF give TNoodle's scrambles, each a turn sequence of that puzzle", { skip: skip || (!process.env.TNOODLE_PASSWORD && "set TNOODLE_PASSWORD") }, async () => {
+  const { poly } = await import("../src/lib/poly.ts");
+  const key = answerKey(), ids: Record<string, "skewb" | "pyram"> = { Skewb: "skewb", Pyraminx: "pyram" };
+  const all = readdirSync(path.join(dir, "Printing")).find((f) => f.endsWith("All Scrambles.pdf"))!;
+  const sets = (await readTnoodlePdf(pdfjs, bytes("Printing", all), process.env.TNOODLE_PASSWORD)).filter((s) => s.event in ids);
+  for (const set of sets) {
+    assert.equal(set.size, ids[set.event], set.title);
+    assert.deepEqual(set.scrambles.map((s) => s.text), key.get(`${ids[set.event]}-r${set.round}-${set.group}`), set.title);
+    for (const s of set.scrambles) poly(ids[set.event]).parse(s.text);
+  }
+  assert.deepEqual([...new Set(sets.map((s) => s.event))].sort(), ["Pyraminx", "Skewb"]);
+});

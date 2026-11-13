@@ -103,3 +103,15 @@ test("follow-along gives Python's reports, look by look", async () => {
   }
   assert.ok(looks > 100);
 });
+
+test("the puzzle is told from the moves", async () => {
+  const { guessPoly, sizeOf, parseLines } = await import("../src/lib/scrambles.ts");
+  assert.equal(guessPoly("U' L U' B U B' U' B' b' r' l"), "pyram");
+  assert.equal(guessPoly("D F BL' L B L' R' U' L' B' F R BL' D L' R U D' BR BL D R D' BR B' R F B F' U'"), "fto");
+  assert.equal(guessPoly("L' R' U L U' B' U L U' B' R"), "skewb");
+  assert.equal(guessPoly("R2 D' B2 U2 L2 F2 D R2 U' L2 B2 R' F U' L' D2 F' R' B D2 R'"), null); // a 3×3
+  for (const e of POLY_EVENTS) {
+    const p = poly(e), lines = parseLines(Array.from({ length: 5 }, () => p.randomScramble().join(" ")).join("\n"));
+    assert.equal(sizeOf(lines), e);
+  }
+});
