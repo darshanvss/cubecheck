@@ -137,12 +137,21 @@ class Mistake:
 
 
 class Follower:
+    colours = 6  # the reader's answers per sticker: this many colours, then "covered"
+    half_margin = 0.0  # how much better "halfway" must fit than the point itself to be reported
+
     def __init__(self, scramble: str, n: int, after: int = 6, before: int = 2, jump: float = 0.02, temper: float = 3.0,
                  min_seen: float = 0.3, max_cost: float = 0.6, min_evidence: float = 8.0, confirm: int = 2) -> None:
         self.n, self.c = n, cube(n)
-        self.moves = self.c.parse(scramble)
         self.after, self.before, self.jump, self.temper = after, before, jump, temper
         self.min_seen, self.max_cost, self.min_evidence, self.confirm = min_seen, max_cost, min_evidence, confirm
+        self.prepare(self.c.parse(scramble), self.c.event_turns, cells(n), middle_cells(n))
+
+    def prepare(self, moves: list[str], turn_list: list[str], cells: np.ndarray, middles: list[int]) -> None:
+        """The scramble's points and a fresh start. The puzzle itself is self.c (its solved state
+        and move()), `turn_list` every turn a slip can be, `cells` the sticker place behind each
+        sticker read, for every way round the puzzle can be seen (poly_follow.py: other puzzles)."""
+        self.moves, self.turn_list = moves, turn_list
         states = [self.c.solved]
         for m in self.moves:
             states.append(states[-1][self.c.move(m)])
@@ -153,7 +162,7 @@ class Follower:
         L = len(self.moves)
         self.belief = np.full(L + 1, 0.1 / (L + 1))
         self.belief[0] += 0.9  # a scramble starts from a solved cube
-        self.cells, self.middles = cells(n), middle_cells(n)
+        self.cells, self.middles = cells, middles
         self.streak, self.mistake, self.looks, self.back, self.half = 0, None, 0, 0, False
         self.path: set[bytes] = set()  # the cubes along the way back shown (see show)
 
@@ -172,7 +181,7 @@ class Follower:
     def fits(self, probs: np.ndarray, unknown: np.ndarray, states: np.ndarray, cap: float = 5.0) -> np.ndarray:
         """Total cost of the seen stickers for each state, in its best orientation: (K,)."""
         rows = np.flatnonzero(~unknown)
-        colour = probs[:, :6] / np.maximum(probs[:, :6].sum(axis=1, keepdims=True), 1e-9)
+        colour = probs[:, :self.colours] / np.maximum(probs[:, :self.colours].sum(axis=1, keepdims=True), 1e-9)
         cost = np.minimum(-np.log(np.maximum(colour, 1e-9)), cap)[rows].astype(np.float32)
         pick = np.arange(len(rows))
         orients = range(len(self.cells))
@@ -190,16 +199,17 @@ class Follower:
 
     def look(self, probs: np.ndarray, inside: np.ndarray, covered: float = 0.5) -> dict:
         """Update with one look (the reader's (3N², 7) probabilities and which stickers are in view)."""
-        unknown = ~inside | (probs[:, 6] > covered)
+        unknown = ~inside | (probs[:, self.colours] > covered)
         seen = int((~unknown).sum())
         if seen < self.min_seen * len(probs):
             return self.report(clear=False)
         f = self.fits(probs, unknown, self.points)
         half = np.full(len(f), np.inf, np.float32)  # halfway through move k's half turn, as point k
-        if self.halves:
+        if self.halves:  # each point's own few (two for a half turn), the best of them
             idx = list(self.halves)
-            half[idx] = self.fits(probs, unknown, np.concatenate([self.halves[i] for i in idx])).reshape(-1, 2).min(axis=1)
-        f = np.minimum(f, half)
+            g = self.fits(probs, unknown, np.concatenate([self.halves[i] for i in idx]))
+            half[idx] = np.minimum.reduceat(g, np.cumsum([0] + [len(self.halves[i]) for i in idx[:-1]]))
+        plain, f = f, np.minimum(f, half)
         # A mistake first, judged from where the cube was before this look: a look that a
         # mistake explains clearly better than any point of the scramble doesn't move the position.
         # Near where the cube was believed to be, and near the point this look fits best
@@ -210,7 +220,7 @@ class Follower:
         if cands:
             g = self.fits(probs, unknown, np.array([m.state for m in cands]))
             # Of the mistakes that fit about as well as the best, the likeliest story.
-            j = min(np.flatnonzero(g <= g.min() + 1.0), key=lambda i: cands[i].rank(self.moves, at))
+            j = min(np.flatnonzero(g <= g.min() + 1.0), key=lambda i: self.rank(cands[i], at))
             if f.min() - g[j] > self.min_evidence and g[j] / seen <= self.max_cost:
                 self.streak += 1
                 self.back = 0
@@ -234,7 +244,7 @@ class Follower:
         like = np.exp(-(f - f.min()) / self.temper)
         self.belief = prior * like / (prior * like).sum()
         k = int(self.belief.argmax())
-        self.half = bool(half[k] <= f[k] and k in self.halves)
+        self.half = bool(k in self.halves and half[k] <= plain[k] - self.half_margin)
         return self.report(clear=True)
 
     def show(self, m: Mistake | None) -> None:
@@ -249,7 +259,7 @@ class Follower:
         if m is None:
             return
         st = m.state
-        f = m.fix(self.moves)
+        f = self.fix(m)
         for move in f["undo"] + f["then"]:
             if (q := quarter(move)):  # halfway through a half turn of the way back
                 self.path |= {st[self.c.move(q)].tobytes(), st[self.c.move(q + "'")].tobytes()}
@@ -274,9 +284,9 @@ class Follower:
                 if kind in ("skipped", "swapped"):
                     firsts = [None]
                 elif kind == "wrong":
-                    firsts = [t for t in self.c.event_turns if t != self.moves[i]]
+                    firsts = [t for t in self.turn_list if t != self.moves[i]]
                 else:  # not the layers of a neighbouring move: R R2 is a wrong R, R' R a skip
-                    firsts = [t for t in self.c.event_turns if turns(t)[0] not in self.neighbours(i, t)]
+                    firsts = [t for t in self.turn_list if not self.meets(i, t)]
                 for t in firsts:
                     if kind == "swapped":
                         st = base[self.c.move(self.moves[i + 1])][self.c.move(self.moves[i])]
@@ -295,9 +305,21 @@ class Follower:
                         if key in scramble:
                             continue
                         m = Mistake(kind, i, t, a, st)
-                        if key not in out or m.rank(self.moves, at) < out[key].rank(self.moves, at):
+                        if key not in out or self.rank(m, at) < self.rank(out[key], at):
                             out[key] = m
         return list(out.values())
+
+    def fix(self, m: Mistake) -> dict:
+        """The way back from a mistake (Mistake.fix)."""
+        return m.fix(self.moves)
+
+    def rank(self, m: Mistake, at: int) -> tuple:
+        """Smaller is the likelier story for the same cube (Mistake.rank)."""
+        return m.rank(self.moves, at)
+
+    def meets(self, i: int, t: str) -> bool:
+        """An extra turn t before move i that is really a wrong move or a skip (see neighbours)."""
+        return turns(t)[0] in self.neighbours(i, t)
 
     def neighbours(self, i: int, t: str) -> set[str]:
         """The layers of the moves an extra turn t before move i meets: the moves on either side,
@@ -319,7 +341,7 @@ class Follower:
                "half": self.half and self.mistake is None}
         if self.mistake is not None:
             m = self.mistake
-            out.update(status="mistake", mistake={"kind": m.kind, "move": m.move, "done": m.done, "after": m.after}, **m.fix(self.moves))
+            out.update(status="mistake", mistake={"kind": m.kind, "move": m.move, "done": m.done, "after": m.after}, **self.fix(m))
         elif not clear and self.looks:
             out["status"] = "unclear"
         else:
