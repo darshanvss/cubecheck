@@ -33,9 +33,27 @@ from cubecheck.poly_corners import PolyCornerFinder
 from cubecheck.poly_reader import face_maps, face_px, load_poly_reader, read_stickers, to_tensor
 from cubecheck.shapes import EVENTS, MODELS, shape
 
-from export_onnx import Corners, Reader, export
+from export_onnx import Corners, export
 
 RUNS = Path(__file__).resolve().parents[2] / "runs"
+
+
+class PolyReaderOnnx(torch.nn.Module):
+    """PolyReader.forward with its einsum written as a matrix product, then softmax. ONNX Runtime's
+    WebGPU backend got the einsum wrong (stickers read differently from the CPU on 14 Nov 2026)."""
+
+    def __init__(self, net) -> None:
+        super().__init__()
+        self.net = net
+
+    def forward(self, faces: torch.Tensor) -> torch.Tensor:
+        net = self.net
+        b, f = faces.shape[:2]
+        x = net.cnn(faces.flatten(0, 1))  # (B*F, C, h, w)
+        masks = net.masks.to(x.dtype).flatten(1)  # (slots, h*w)
+        x = torch.matmul(x.flatten(2), masks.t()).transpose(1, 2)  # (B*F, slots, C): each sticker's average
+        x = x.reshape(b, f * masks.shape[0], -1)
+        return torch.softmax(net.head(net.mix(x + net.position)), dim=-1)
 
 
 def main() -> None:
@@ -56,7 +74,7 @@ def main() -> None:
         out.mkdir(parents=True, exist_ok=True)
         finder = PolyCornerFinder.load(event, RUNS / "corners" / corners, "cpu")
         reader = load_poly_reader(str(RUNS / "reader" / reader_name / "best.pt"), "cpu")
-        nets = {"finder": Corners(finder.finder), "refiner": Corners(finder.refiner), "reader": Reader(reader)}
+        nets = {"finder": Corners(finder.finder), "refiner": Corners(finder.refiner), "reader": PolyReaderOnnx(reader)}
         for name in ("finder", "refiner"):
             export(nets[name], torch.rand(1, 3, IN_PX, IN_PX), out / f"{name}.onnx", ["image"], ["corners", "present"])
         s = face_px(sh)

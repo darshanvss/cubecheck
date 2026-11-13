@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import type { Point } from "@/lib/check";
 import { readable } from "@/lib/nxn-check";
 import { judge, prepare } from "@/lib/scrambles";
-import { findCube, framePixels, loadModels, readStickers } from "@/lib/vision";
+import { poly, type PolyEvent } from "@/lib/poly";
+import { findCube, findPoly, framePixels, loadModels, loadPolyModels, readPoly, readStickers } from "@/lib/vision";
 
 interface Reference {
   image: string;
@@ -15,6 +16,15 @@ interface Reference {
   corners: Point[] | null;
   probs?: number[][];
   verdicts?: Record<string, { scramble: string; status: string; observed: string }>;
+}
+
+interface PolyReference {
+  event: PolyEvent;
+  image: string;
+  finder: Point[];
+  found: { corners: Point[]; inside: boolean[] } | null;
+  probs?: number[][];
+  verdicts?: Record<string, { scramble: string; status: string }>;
 }
 
 interface Row {
@@ -70,6 +80,30 @@ export default function Test() {
         out.push(row);
         setRows([...out]);
         setSummary(`Running on ${models.backend}… ${out.length}/${reference.length}`);
+      }
+      // Skewb, pyraminx and FTO (python/scripts/poly_reference.py), when their models are there.
+      const polyRef: PolyReference[] = await fetch("/check/poly-reference.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : []), () => []);
+      for (const ref of polyRef) {
+        const pm = await loadPolyModels(ref.event, "/models/", backend), p = poly(ref.event);
+        const img = await createImageBitmap(await (await fetch(`/check/${ref.image}`)).blob());
+        const t0 = performance.now(), found = await findPoly(pm, img);
+        const C = p.d.colours + 1, cells = p.d.nFaces * p.d.perFace;
+        const row: Row = { image: ref.image, finderOff: off(found.steps[0].corners, ref.finder), cornersOff: NaN, gap: NaN, same: 0, cells, verdicts: 0, ms: 0 };
+        if (found.corners && ref.found && ref.probs) {
+          const probs = await readPoly(pm, framePixels(img), p.faceMatrices(found.corners, img.width, img.height));
+          row.ms = performance.now() - t0;
+          row.cornersOff = off(found.corners, ref.found.corners);
+          row.gap = 0;
+          ref.probs.forEach((want, n) => {
+            want.forEach((q, k) => (row.gap = Math.max(row.gap, Math.abs(q - probs[C * n + k]))));
+            row.same += Number(argmax(probs.slice(C * n, C * n + C)) === argmax(want));
+          });
+          const inside = p.readable(found.corners, img.width, img.height);
+          for (const want of Object.values(ref.verdicts ?? {})) row.verdicts += Number(p.check(probs, inside, p.after(want.scramble), p.singleSlips(want.scramble)).status === want.status);
+        }
+        out.push(row);
+        setRows([...out]);
+        setSummary(`Running on ${pm.backend}… ${out.length}/${reference.length + polyRef.length}`);
       }
       const done = out.filter((r) => !Number.isNaN(r.cornersOff));
       const same = done.reduce((s, r) => s + r.same, 0), verdicts = done.reduce((s, r) => s + r.verdicts, 0);
