@@ -33,7 +33,7 @@ export interface ScrambleSet {
   round: number;
   group: string; // "A", "B", ...
   attempt: number | null; // Fewest Moves and Multi-Blind sheets: which attempt
-  size: number | null; // the cube's N for N×N events (Fewest Moves is a 3×3), null for other puzzles
+  size: number | "skewb" | "pyram" | null; // the cube's N for N×N events (Fewest Moves is a 3×3), the puzzle for skewb and pyraminx (experimental), null for others
   scrambles: TnoodleScramble[];
 }
 
@@ -107,7 +107,7 @@ export function parsePage(items: TextItem[]): ScrambleSet | null {
   const n = CUBE_EVENT.exec(event);
   const set: ScrambleSet = {
     title: text, event, round: Number(round), group: letter || "A", attempt: attempt ? Number(attempt) : null,
-    size: n ? Number(n[1]) : FMC.test(event) ? 3 : null, scrambles: [],
+    size: n ? Number(n[1]) : FMC.test(event) ? 3 : event === "Skewb" ? "skewb" : event === "Pyraminx" ? "pyram" : null, scrambles: [],
   };
   if (FMC.test(set.event)) return fewestMoves(set, all);
   // Numbers (1, 2, ..., E1, E2) stand alone in the left column; move lines hold nothing but moves.
@@ -188,7 +188,7 @@ export function loadPdfJs(): Promise<PdfJs> {
 
 export interface EventSets {
   event: string;
-  size: number | null; // null: not a cube this page can check yet
+  size: ScrambleSet["size"]; // null: not a puzzle this page can check yet
   sets: ScrambleSet[];
 }
 

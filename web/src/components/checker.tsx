@@ -4,16 +4,18 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CubeNet, STICKER } from "@/components/cube-net";
+import { PolyNet } from "@/components/poly-net";
 import { FollowView, followWords } from "@/components/follow-panel";
 import { Icon, ScrambleSource, type Source } from "@/components/scramble-source";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FACE_QUADS, cubeSize, squareToQuad, type Point, type Verdict } from "@/lib/check";
 import { Follower, type Report } from "@/lib/follow";
 import { PX_PER_STICKER, cellCentres, checkN, layerEdges, measuredRatio, readable } from "@/lib/nxn-check";
-import { EVENT_NAME } from "@/lib/nxn";
-import { match, netOf, prepare, type Match, type Scramble } from "@/lib/scrambles";
+import { isPoly, poly, type PolyEvent } from "@/lib/poly";
+import { PolyFollower } from "@/lib/poly-follow";
+import { match, netOf, prepare, puzzleName, type Match, type Puzzle, type Scramble } from "@/lib/scrambles";
 import { CornerSmoother } from "@/lib/smooth";
-import { findCube, loadModels, readStickers, type Models } from "@/lib/vision";
+import { findCube, findPoly, loadModels, loadPolyModels, readPoly, readStickers, type Models, type PolyModels } from "@/lib/vision";
 import { cn } from "@/lib/utils";
 
 const MAX_WIDTH = 1280; // frames are checked at most this wide
@@ -32,7 +34,8 @@ const minCubePx = (n: number) => (n === 3 ? 60 : PX_PER_STICKER * n);
 interface Frame {
   width: number;
   height: number;
-  n: number;
+  n: Puzzle;
+  outlines: (Point[] | null)[] | null; // skewb, pyraminx, FTO: each sticker's outline in the picture (null: not readable)
   edges: number[] | undefined; // where the layers end on each face (uneven on a big cube), none: equal
   corners: Point[] | null;
   centres: Point[] | null;
@@ -58,6 +61,7 @@ export function Checker() {
   const scrambles = useMemo(() => prepare(deferred.lines, deferred.size), [deferred]);
   const size = deferred.size;
   const [models, setModels] = useState<Models | null>(null);
+  const [polyModels, setPolyModels] = useState<Partial<Record<PolyEvent, PolyModels>>>({}); // loaded when first chosen
   const [modelError, setModelError] = useState("");
   const [camera, setCamera] = useState<"off" | "starting" | "on" | "error">("off");
   const [photo, setPhoto] = useState<string | null>(null); // a photo checked instead of the camera
@@ -86,16 +90,22 @@ export function Checker() {
   const overlay = useRef<HTMLCanvasElement>(null);
   const grab = useRef<HTMLCanvasElement | null>(null);
   const work = useRef<HTMLCanvasElement | null>(null);
-  const smoother = useRef(new CornerSmoother());
+  const smoothers = useRef(new Map<Puzzle, CornerSmoother>()); // each shape has its own corners
+  const smootherFor = (n: Puzzle) => {
+    const key = isPoly(n) ? n : 0;
+    if (!smoothers.current.has(key)) smoothers.current.set(key, isPoly(n) ? new CornerSmoother(1, 2, 1, 0.5, poly(n).d.relabellings, poly(n).d.spokes) : new CornerSmoother());
+    return smoothers.current.get(key)!;
+  };
   const history = useRef<string[]>([]);
 
   const valid = scrambles.filter((s) => s.state);
   const following = mode === "follow";
   const target: Scramble | undefined = following ? valid.find((s) => s.number === followed) ?? valid[0] : undefined;
   // Big cubes have thicker outer layers: the grid follows the measured widths (6×6, 7×7), even elsewhere.
-  const r = measuredRatio(size), edges = r === 1 ? undefined : layerEdges(size, r);
-  const latest = useRef({ models, scrambles, following, target, size, valid, edges });
-  latest.current = { models, scrambles, following, target, size, valid, edges };
+  const r = isPoly(size) ? 1 : measuredRatio(size), edges = r === 1 || isPoly(size) ? undefined : layerEdges(size as number, r);
+  const ready = isPoly(size) ? polyModels[size] ?? null : models; // the models for the puzzle chosen
+  const latest = useRef({ models, polyModels, scrambles, following, target, size, valid, edges });
+  latest.current = { models, polyModels, scrambles, following, target, size, valid, edges };
 
   useEffect(() => {
     try {
@@ -131,7 +141,7 @@ export function Checker() {
   // A new scramble to follow (or the mode switched) starts the tracker from a solved cube.
   const restart = useCallback(() => {
     const t = latest.current.target;
-    follower.current = t ? new Follower(t.text, t.size) : null;
+    follower.current = !t ? null : isPoly(t.size) ? new PolyFollower(t.text, t.size) : new Follower(t.text, t.size);
     steady.current = NO_STEADY;
     finished.current = false;
     history.current = [];
@@ -146,6 +156,12 @@ export function Checker() {
   useEffect(() => {
     loadModels().then(setModels, (err) => setModelError(String(err?.message ?? err)));
   }, []);
+  // Skewb, pyraminx and FTO have their own three networks, loaded the first time one is chosen.
+  useEffect(() => {
+    if (!isPoly(size) || polyModels[size]) return;
+    setModelError("");
+    loadPolyModels(size).then((pm) => setPolyModels((old) => ({ ...old, [size]: pm })), (err) => setModelError(String(err?.message ?? err)));
+  }, [size, polyModels]);
 
   const startCamera = useCallback(async () => {
     setCamera("starting");
@@ -181,16 +197,25 @@ export function Checker() {
     if (g.width !== w || g.height !== h) Object.assign(g, { width: w, height: h });
     const gc = g.getContext("2d", { willReadFrequently: true })!;
     gc.drawImage(source, 0, 0, w, h);
-    const now = t0 / 1000, s = smoother.current;
-    const { models: m, scrambles: list, following: fol, target: t, size: n, edges: e } = latest.current;
-    const found = await findCube(m!, g, live && s.fresh(now) ? s.kp : null, work.current!);
+    const now = t0 / 1000;
+    const { models: m, polyModels: pms, scrambles: list, following: fol, target: t, size: n, edges: e } = latest.current;
+    const pm = isPoly(n) ? pms[n] : undefined, p = isPoly(n) ? poly(n) : undefined, s = smootherFor(n);
+    if (p && !pm) return; // still loading
+    const previous = live && s.fresh(now) ? s.kp : null;
+    const found = pm ? await findPoly(pm, g, previous, work.current!) : await findCube(m!, g, previous, work.current!);
     const corners = !found.corners ? (s.reset(), null) : live ? s.update(found.corners, now) : found.corners;
-    let result: Match | null = null, tooSmall = false, where: Frame["now"] = null;
+    let result: Match | null = null, tooSmall = false, where: Frame["now"] = null, outlines: Frame["outlines"] = null, centres: Point[] | null = null;
     const against = fol ? (t ? [t] : []) : list;
+    // The puzzle's stickers in the picture: an N×N grid on a cube, the shape's own outlines on the others.
+    const matrices = p && corners ? p.faceMatrices(corners, w, h) : null;
+    if (corners) centres = p ? p.cellCentres(corners, w, h, matrices!) : cellCentres(corners, n as number, e);
     if (corners && against.some((x) => x.state)) {
-      tooSmall = cubeSize(corners) < minCubePx(n);
+      tooSmall = p ? p.size(corners) < p.d.minSize : cubeSize(corners) < minCubePx(n as number);
+      const inside = p ? p.readable(corners, w, h) : readable(corners, n as number, w, h);
+      if (p) outlines = p.outlines(matrices!).map((o, i) => (inside[i] ? o : null));
       if (!tooSmall) {
-        const probs = await readStickers(m!, gc.getImageData(0, 0, w, h), corners, n, e), inside = readable(corners, n, w, h);
+        const pixels = gc.getImageData(0, 0, w, h);
+        const probs = pm ? await readPoly(pm, pixels, matrices!) : await readStickers(m!, pixels, corners, n as number, e);
         if (fol && follower.current) {
           const r = follower.current.look(probs, inside), st = steady.current;
           if (r.clear) {
@@ -209,7 +234,7 @@ export function Checker() {
           }
           // Where the cube should be now (where the scrambler meant to be, after a slip), for the nets.
           const point = meantPoint(shown);
-          where = { point, verdict: checkN(probs, inside, n, f.points[point]) };
+          where = { point, verdict: p ? p.check(probs, inside, f.points[point]) : checkN(probs, inside, n as number, f.points[point]) };
         }
         result = match(probs, inside, against);
       }
@@ -227,11 +252,11 @@ export function Checker() {
     const key = result ? `${result.status}:${result.scramble?.number ?? 0}` : "";
     history.current = !result ? [] : live ? [...history.current, key].slice(-HISTORY) : [key];
     setSettled(live ? settle(history.current) : key);
-    setFrame({ width: w, height: h, n, edges: e, corners, centres: corners && cellCentres(corners, n, e), match: result, tooSmall, ms: performance.now() - t0, now: where });
+    setFrame({ width: w, height: h, n, edges: e, outlines, corners, centres, match: result, tooSmall, ms: performance.now() - t0, now: where });
   }, []);
 
   useEffect(() => {
-    if (camera !== "on" || !models || photo) return;
+    if (camera !== "on" || !ready || photo) return;
     let stop = false;
     const step = async () => {
       const v = video.current!;
@@ -243,21 +268,21 @@ export function Checker() {
     return () => {
       stop = true;
     };
-  }, [camera, models, photo, analyse]);
+  }, [camera, ready, photo, analyse]);
 
   // A photo: checked once when it loads, again when the scrambles change.
   useEffect(() => {
     const img = still.current;
-    if (!photo || !models || !img) return;
+    if (!photo || !ready || !img) return;
     const run = () => void analyse(img, img.naturalWidth, img.naturalHeight, false);
     if (img.complete && img.naturalWidth) run();
     else img.onload = run;
-  }, [photo, models, scrambles, analyse]);
+  }, [photo, ready, scrambles, analyse]);
 
   const choosePhoto = (file: File | undefined) => {
     if (!file) return;
     if (photo) URL.revokeObjectURL(photo);
-    smoother.current.reset();
+    smoothers.current.forEach((sm) => sm.reset());
     setFrame(null);
     setPhoto(URL.createObjectURL(file));
   };
@@ -269,7 +294,7 @@ export function Checker() {
     ? { tone: "wait" as const, title: `Not on scramble ${target?.label ?? ""}`, detail: "follow-along watches from a solved cube: start from solved" }
     : following && report && !followDone && !photo
     ? followWords(report, moves)
-    : describe({ valid: following ? Number(!!target) : valid.length, models, modelError, camera: photo ? "on" : camera, cameraError, frame, settled, live: !photo, size, done: followDone });
+    : describe({ valid: following ? Number(!!target) : valid.length, models: ready, modelError, camera: photo ? "on" : camera, cameraError, frame, settled, live: !photo, size, done: followDone });
   const m = frame?.match;
   const observed = netFrom(m?.verdict, frame?.n ?? size);
   const matched = settled.startsWith("correct") ? Number(settled.split(":")[1]) : 0;
@@ -286,14 +311,19 @@ export function Checker() {
   const point = now?.point ?? (report ? meantPoint(report) : 0);
   const flagSource = following && !followDone ? (report?.status === "mistake" ? now?.verdict : undefined) : marked;
   const flagged = useMemo(() => new Set(flagSource ? flagSource.mismatches.map((k) => flagSource.facelets[k]) : []), [flagSource]);
-  const follower_ = follower.current, blankNet = "?".repeat(6 * size * size);
-  const shouldBe = !following
-    ? compared ? netOf(compared.state!) : blankNet
-    : tracking && follower_ ? netOf(follower_.points[point]) : target?.state ? netOf(target.state) : blankNet;
+  const follower_ = follower.current;
+  // The state the left net shows: the matched scramble's, or where follow-along says the puzzle should be.
+  const shouldState = !following
+    ? compared?.state ?? null
+    : tracking && follower_ ? follower_.points[point] ?? null : target?.state ?? null;
+  const blankNet = "?".repeat(isPoly(size) ? 0 : 6 * size * size);
+  const shouldBe = isPoly(size) ? "" : shouldState ? netOf(shouldState) : blankNet;
   const shouldCaption = !following
     ? compared ? `Scramble ${compared.label}` : "From the scramble"
     : tracking ? (point === 0 ? "Should be: solved" : `Should be: after move ${point}`) : target ? `Scramble ${target.label}` : "From the scramble";
   const seen = now ? netFrom(now.verdict, frame!.n) : observed;
+  const placesSeen = isPoly(size) ? polyColours(now ? now.verdict : m?.verdict, size) : [];
+  const placesShould = isPoly(size) ? (shouldState ? Array.from(shouldState) : new Array(poly(size).d.places).fill(-1)) : [];
   useEffect(() => drawOverlay(overlay.current, photo ? still.current : video.current, grid ? frame : null, !photo && mirror, !!marked), [frame, mirror, photo, marked, grid]);
 
   const listView = (
@@ -376,7 +406,7 @@ export function Checker() {
           {showing !== "none" && (
             <div className="absolute left-2.5 right-2.5 top-2.5 flex items-start justify-between gap-2">
               <span className="rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] tabular-nums text-white/75">
-                {models ? `${models.backend === "webgpu" ? "GPU" : "CPU"}${frame ? ` · ${frame.ms.toFixed(0)} ms` : ""}` : "Loading…"}
+                {ready ? `${ready.backend === "webgpu" ? "GPU" : "CPU"}${frame ? ` · ${frame.ms.toFixed(0)} ms` : ""}` : "Loading…"}
               </span>
               <div className="flex gap-1.5">
                 <Tooltip>
@@ -405,11 +435,13 @@ export function Checker() {
             <div className="pointer-events-none absolute inset-x-2.5 bottom-2.5 flex items-end justify-between gap-2.5">
               <figure className="w-[min(220px,30%)] rounded-xl bg-black/65 p-2">
                 <figcaption className="mb-1.5 truncate text-[11px] text-white/80">{shouldCaption}</figcaption>
-                <CubeNet letters={shouldBe} flagged={flagged} label="What the cube should look like" />
+                {isPoly(size) ? <PolyNet event={size} colours={placesShould} flagged={flagged} label="What the puzzle should look like" />
+                  : <CubeNet letters={shouldBe} flagged={flagged} label="What the cube should look like" />}
               </figure>
               <figure className="w-[min(220px,30%)] rounded-xl bg-black/65 p-2">
                 <figcaption className="mb-1.5 truncate text-[11px] text-white/80">What the camera reads</figcaption>
-                <CubeNet letters={seen} flagged={flagged} label="What the camera reads" />
+                {isPoly(size) ? <PolyNet event={size} colours={placesSeen} flagged={flagged} label="What the camera reads" />
+                  : <CubeNet letters={seen} flagged={flagged} label="What the camera reads" />}
               </figure>
             </div>
           )}
@@ -436,16 +468,19 @@ function settle(history: string[]): string {
 }
 
 function describe({ valid, models, modelError, camera, cameraError, frame, settled, live, size, done }: {
-  valid: number; models: Models | null; modelError: string; camera: string; cameraError: string; frame: Frame | null; settled: string; live: boolean; size: number; done: boolean;
+  valid: number; models: object | null; modelError: string; camera: string; cameraError: string; frame: Frame | null; settled: string; live: boolean; size: Puzzle; done: boolean;
 }): Shown {
+  const thing = isPoly(size) ? "puzzle" : "cube";
   if (modelError) return { tone: "bad", title: "Couldn't load the models", detail: modelError };
   if (!valid) return { tone: "wait", title: "Add your scrambles", detail: "paste them, or open a TNoodle PDF" };
   if (camera === "error") return { tone: "wait", title: "No camera", detail: cameraError };
-  if (camera !== "on") return { tone: "wait", title: "Start the camera", detail: "then show the cube, a corner toward it" };
+  if (camera !== "on") return { tone: "wait", title: "Start the camera", detail: isPoly(size) ? `then show the ${puzzleName(size)}: ${poly(size).d.holdHint.split(", so")[0].replace("turn ", "")}` : "then show the cube, a corner toward it" };
   if (!models) return { tone: "wait", title: "Loading the models…", detail: "about 23 MB, once" };
-  if (!frame) return { tone: "wait", title: live ? "Show the cube" : "Checking…", detail: "" };
-  if (!frame.corners) return { tone: "wait", title: live ? "Show the cube" : "No cube found", detail: `a ${EVENT_NAME[size]}, one corner toward the camera` };
-  if (frame.tooSmall) return { tone: "wait", title: "Move closer", detail: "the cube is too small to read" };
+  if (!frame) return { tone: "wait", title: live ? `Show the ${thing}` : "Checking…", detail: "" };
+  if (!frame.corners) {
+    return { tone: "wait", title: live ? `Show the ${thing}` : `No ${thing} found`, detail: isPoly(size) ? `a ${puzzleName(size)}: ${poly(size).d.holdHint}` : `a ${puzzleName(size)}, one corner toward the camera` };
+  }
+  if (frame.tooSmall) return { tone: "wait", title: "Move closer", detail: `the ${thing} is too small to read` };
   const m = frame.match;
   if (!m) return { tone: "wait", title: "Checking…", detail: "" };
   const lead = done ? "All moves done · " : "";
@@ -458,8 +493,16 @@ function describe({ valid, models, modelError, camera, cameraError, frame, settl
   return { tone: "wait", title: "Checking…", detail: "hold the cube still for a moment" };
 }
 
+/** What the camera read on a skewb, pyraminx or FTO, by sticker place: the face number, -1 where nothing was read. */
+function polyColours(v: Verdict | null | undefined, event: PolyEvent): number[] {
+  const p = poly(event), out = new Array(p.d.places).fill(-1), read = v?.observed ? v.observed.split(",") : [];
+  v?.facelets.forEach((place, k) => (out[place] = read[k] && read[k] !== "?" ? p.d.faceKeys.indexOf(read[k]) : -1));
+  return out;
+}
+
 /** The 6N²-sticker net of what the camera read: the visible faces, the rest grey. */
-function netFrom(v: Verdict | null | undefined, n: number): string {
+function netFrom(v: Verdict | null | undefined, n: Puzzle): string {
+  if (isPoly(n)) return "";
   const letters = Array(6 * n * n).fill("?");
   v?.facelets.forEach((f, k) => (letters[f] = v.observed[k] ?? "?"));
   return letters.join("");
@@ -484,6 +527,7 @@ function drawOverlay(canvas: HTMLCanvasElement | null, video: HTMLElement | null
     if (close) c.closePath();
     c.stroke();
   };
+  if (isPoly(frame.n)) return drawPoly(c, frame, P, k, marks);
   c.strokeStyle = "rgba(92, 200, 230, 0.55)";
   c.lineWidth = 1.2;
   for (const quad of FACE_QUADS) {
@@ -512,6 +556,51 @@ function drawOverlay(canvas: HTMLCanvasElement | null, video: HTMLElement | null
     c.lineWidth = 1.5;
     c.stroke();
     if (bad.has(n)) {
+      c.beginPath();
+      c.arc(x, y, 2 * r, 0, Math.PI * 2);
+      c.strokeStyle = "#ef4444";
+      c.lineWidth = 3;
+      c.stroke();
+    }
+  });
+}
+
+/** The overlay for a skewb, pyraminx or FTO: the faces seen from the front, each readable sticker's outline, and its colour read. */
+function drawPoly(c: CanvasRenderingContext2D, frame: Frame, P: (p: Point) => Point, k: Point[], marks: boolean) {
+  const p = poly(frame.n as PolyEvent), wind = p.windings(frame.corners!);
+  const shape = (pts: Point[]) => {
+    c.beginPath();
+    pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+    c.closePath();
+  };
+  c.strokeStyle = "rgba(92, 200, 230, 0.55)";
+  c.lineWidth = 1.2;
+  frame.outlines?.forEach((o) => {
+    if (!o) return;
+    shape(o.map(P));
+    c.stroke();
+  });
+  c.strokeStyle = "#5cc8e6";
+  c.lineWidth = 2.5;
+  p.d.polys.forEach((poly_, f) => {
+    if (wind[f] >= 0) return; // turned away from the camera
+    shape(poly_.map((i) => k[i]));
+    c.stroke();
+  });
+  const v = frame.match?.verdict;
+  if (!v?.observed || !frame.centres) return;
+  const read = v.observed.split(","), bad = new Set(marks ? v.mismatches : []), r = Math.max(3, 0.06 * p.size(frame.corners!.map(P)));
+  frame.centres.forEach((pt, i) => {
+    if ((read[i] === "?" || !read[i]) && !bad.has(i)) return;
+    const [x, y] = P(pt);
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fillStyle = read[i] && read[i] !== "?" ? p.d.css[p.d.faceKeys.indexOf(read[i])] : STICKER["?"];
+    c.fill();
+    c.strokeStyle = "#000";
+    c.lineWidth = 1.5;
+    c.stroke();
+    if (bad.has(i)) {
       c.beginPath();
       c.arc(x, y, 2 * r, 0, Math.PI * 2);
       c.strokeStyle = "#ef4444";

@@ -100,7 +100,7 @@ test("every cube Computer Display PDF, unlocked with its own passcode, gives exa
     assert.equal(sets.length, 1, title);
     assert.ok(title.startsWith(sets[0].title), title); // a round with one group says just "2x2x2 Round 2"
     assert.deepEqual(sets[0].scrambles.map((s) => s.text), key.get(keyOf(sets[0])), title);
-    for (const s of sets[0].scrambles) cube(sets[0].size!).parse(s.text); // every scramble takes, at the title's size
+    for (const s of sets[0].scrambles) cube(sets[0].size as number).parse(s.text); // every scramble takes, at the title's size
   }
 });
 
