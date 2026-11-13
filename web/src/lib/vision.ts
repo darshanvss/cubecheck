@@ -288,7 +288,9 @@ export function loadPolyModels(event: PolyEvent, base = "/models/", backend?: Mo
   if (!polyLoaded.has(key)) {
     polyLoaded.set(key, (async () => {
       const ort = await loadRuntime(), dir = `${base}${event}/`;
-      const meta: PolyMeta = await (await fetch(`${dir}meta.json`, { cache: "no-cache" })).json();
+      const found = await fetch(`${dir}meta.json`, { cache: "no-cache" });
+      if (!found.ok) throw new Error(`the ${poly(event).d.name} models aren't on this site yet`);
+      const meta: PolyMeta = await found.json();
       const options = { executionProviders: chosen === "webgpu" ? ["webgpu", "wasm"] : ["wasm"] };
       const open = async (name: string) => ort.InferenceSession.create(new Uint8Array(await (await fetch(`${dir}${name}.onnx`, { cache: "no-cache" })).arrayBuffer()), options);
       const finder = await open("finder"), refiner = await open("refiner"), reader = await open("reader");
