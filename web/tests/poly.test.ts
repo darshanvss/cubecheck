@@ -86,3 +86,20 @@ test("verdicts match Python, field by field", () => {
   }
   assert.equal(checked, 2 * reference.filter((r) => r.verdicts).length);
 });
+
+test("follow-along gives Python's reports, look by look", async () => {
+  const { PolyFollower } = await import("../src/lib/poly-follow.ts");
+  const runs: { event: PolyEvent; scramble: string; looks: { probs: number[]; inside: boolean[]; report: Record<string, unknown> }[] }[] =
+    JSON.parse(readFileSync(new URL("./fixtures/poly-follow.json", import.meta.url), "utf8"));
+  let looks = 0;
+  for (const run of runs) {
+    const f = new PolyFollower(run.scramble, run.event);
+    run.looks.forEach((lk, i) => {
+      const got = f.look(Float64Array.from(lk.probs), lk.inside) as unknown as Record<string, unknown>;
+      const label = `${run.event} "${run.scramble}", look ${i + 1}`;
+      for (const [k, want] of Object.entries(lk.report)) assert.deepEqual(got[k] ?? null, want ?? null, `${label}: ${k}`);
+      looks++;
+    });
+  }
+  assert.ok(looks > 100);
+});
