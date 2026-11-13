@@ -9,7 +9,7 @@ import { Icon, ScrambleSource, type Source } from "@/components/scramble-source"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FACE_QUADS, cubeSize, squareToQuad, type Point, type Verdict } from "@/lib/check";
 import { Follower, type Report } from "@/lib/follow";
-import { PX_PER_STICKER, cellCentres, checkN, readable } from "@/lib/nxn-check";
+import { PX_PER_STICKER, cellCentres, checkN, layerEdges, measuredRatio, readable } from "@/lib/nxn-check";
 import { EVENT_NAME } from "@/lib/nxn";
 import { match, netOf, prepare, type Match, type Scramble } from "@/lib/scrambles";
 import { CornerSmoother } from "@/lib/smooth";
@@ -25,6 +25,10 @@ const HOLD_CLEAR = 1500; // follow-along says it can't see the cube only after t
 const HOLD_OFF = 2500;
 const MODE_KEY = "cubecheck-mode";
 const GRID_KEY = "cubecheck-grid"; // "off": no grid or sticker dots drawn on the cube
+const LAYERS_KEY = "cubecheck-layers"; // outer ÷ inner layer width per cube size, where it was changed
+// Sizes whose layer widths can be set: big cubes have thicker outer layers (measured on a 6×6 and 7×7).
+const LAYER_SIZES = [4, 5, 6, 7];
+const LAYER_CHOICES = [1, 1.2, 1.4, 1.6, 1.8];
 
 // Smaller than this (the mean edge, in pixels), stickers are too few pixels to read.
 const minCubePx = (n: number) => (n === 3 ? 60 : PX_PER_STICKER * n);
@@ -33,6 +37,7 @@ interface Frame {
   width: number;
   height: number;
   n: number;
+  edges: number[] | undefined; // where the layers end on each face (uneven on a big cube), none: equal
   corners: Point[] | null;
   centres: Point[] | null;
   match: Match | null;
@@ -65,6 +70,8 @@ export function Checker() {
   // camera isn't (there the picture already matches what you see), so there's no switch for it.
   const [mirror, setMirror] = useState(true);
   const [grid, setGrid] = useState(true); // the cube's outline, its sticker grid and the colours read, drawn on the picture
+  const [layerRatio, setLayerRatio] = useState<Record<number, number>>({}); // outer ÷ inner layer width, where changed
+  const ratio = (n: number) => layerRatio[n] ?? measuredRatio(n);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [settled, setSettled] = useState<string>("");
 
@@ -91,8 +98,9 @@ export function Checker() {
   const valid = scrambles.filter((s) => s.state);
   const following = mode === "follow";
   const target: Scramble | undefined = following ? valid.find((s) => s.number === followed) ?? valid[0] : undefined;
-  const latest = useRef({ models, scrambles, following, target, size, valid });
-  latest.current = { models, scrambles, following, target, size, valid };
+  const r = ratio(size), edges = r === 1 ? undefined : layerEdges(size, r);
+  const latest = useRef({ models, scrambles, following, target, size, valid, edges });
+  latest.current = { models, scrambles, following, target, size, valid, edges };
 
   useEffect(() => {
     try {
@@ -104,6 +112,18 @@ export function Checker() {
       if (localStorage.getItem(GRID_KEY) === "off") setGrid(false);
     } catch {}
   }, []);
+  useEffect(() => {
+    try {
+      setLayerRatio(JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}"));
+    } catch {}
+  }, []);
+  const chooseRatio = (n: number, value: number) => {
+    const next = { ...layerRatio, [n]: value };
+    setLayerRatio(next);
+    try {
+      localStorage.setItem(LAYERS_KEY, JSON.stringify(next));
+    } catch {}
+  };
   const switchGrid = () => {
     setGrid(!grid);
     try {
@@ -179,7 +199,7 @@ export function Checker() {
     const gc = g.getContext("2d", { willReadFrequently: true })!;
     gc.drawImage(source, 0, 0, w, h);
     const now = t0 / 1000, s = smoother.current;
-    const { models: m, scrambles: list, following: fol, target: t, size: n } = latest.current;
+    const { models: m, scrambles: list, following: fol, target: t, size: n, edges: e } = latest.current;
     const found = await findCube(m!, g, live && s.fresh(now) ? s.kp : null, work.current!);
     const corners = !found.corners ? (s.reset(), null) : live ? s.update(found.corners, now) : found.corners;
     let result: Match | null = null, tooSmall = false, where: Frame["now"] = null;
@@ -187,7 +207,7 @@ export function Checker() {
     if (corners && against.some((x) => x.state)) {
       tooSmall = cubeSize(corners) < minCubePx(n);
       if (!tooSmall) {
-        const probs = await readStickers(m!, gc.getImageData(0, 0, w, h), corners, n), inside = readable(corners, n, w, h);
+        const probs = await readStickers(m!, gc.getImageData(0, 0, w, h), corners, n, e), inside = readable(corners, n, w, h);
         if (fol && follower.current) {
           const r = follower.current.look(probs, inside), st = steady.current;
           if (r.clear) {
@@ -224,7 +244,7 @@ export function Checker() {
     const key = result ? `${result.status}:${result.scramble?.number ?? 0}` : "";
     history.current = !result ? [] : live ? [...history.current, key].slice(-HISTORY) : [key];
     setSettled(live ? settle(history.current) : key);
-    setFrame({ width: w, height: h, n, corners, centres: corners && cellCentres(corners, n), match: result, tooSmall, ms: performance.now() - t0, now: where });
+    setFrame({ width: w, height: h, n, edges: e, corners, centres: corners && cellCentres(corners, n, e), match: result, tooSmall, ms: performance.now() - t0, now: where });
   }, []);
 
   useEffect(() => {
@@ -249,7 +269,7 @@ export function Checker() {
     const run = () => void analyse(img, img.naturalWidth, img.naturalHeight, false);
     if (img.complete && img.naturalWidth) run();
     else img.onload = run;
-  }, [photo, models, scrambles, analyse]);
+  }, [photo, models, scrambles, analyse, r]); // r: the layer widths changed
 
   const choosePhoto = (file: File | undefined) => {
     if (!file) return;
@@ -376,6 +396,20 @@ export function Checker() {
                 {models ? `${models.backend === "webgpu" ? "GPU" : "CPU"}${frame ? ` · ${frame.ms.toFixed(0)} ms` : ""}` : "Loading…"}
               </span>
               <div className="flex gap-1.5">
+                {LAYER_SIZES.includes(size) && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <label className="flex h-8 items-center gap-1 rounded-lg bg-black/55 pl-2 pr-1 text-[11px] text-white/80 hover:text-white">
+                        Outer layers
+                        <select aria-label="How much thicker the outer layers are than the inner ones" value={ratioChoice(ratio(size), size)}
+                          onChange={(e) => chooseRatio(size, Number(e.target.value))} className="h-6 rounded-md bg-transparent text-[11px] tabular-nums text-white outline-none [&>option]:text-black">
+                          {ratioOptions(size).map((v) => <option key={v} value={v}>{ratioLabel(v, size)}</option>)}
+                        </select>
+                      </label>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-64 text-balance">Big cubes are made with thicker outer layers. The sticker grid follows this setting; change it if the grid doesn&apos;t sit on your cube&apos;s stickers.</TooltipContent>
+                  </Tooltip>
+                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button aria-label={grid ? "Hide the grid on the cube" : "Show the grid on the cube"} aria-pressed={grid} onClick={switchGrid} className="grid size-8 place-items-center rounded-lg bg-black/55 text-white/80 hover:text-white">
@@ -415,6 +449,14 @@ export function Checker() {
     </div>
   );
 }
+
+/** The layer ratios offered for a size: the usual steps, and the measured one where there is one. */
+function ratioOptions(n: number): number[] {
+  const measured = Math.round(measuredRatio(n) * 100) / 100;
+  return [...LAYER_CHOICES.filter((v) => Math.abs(v - measured) >= 0.05), measured].sort((a, b) => a - b);
+}
+const ratioChoice = (r: number, n: number) => ratioOptions(n).reduce((best, v) => (Math.abs(v - r) < Math.abs(best - r) ? v : best));
+const ratioLabel = (v: number, n: number) => (v === 1 ? "even" : `${v}×`) + (v === Math.round(measuredRatio(n) * 100) / 100 && v !== 1 ? " (measured)" : "");
 
 /** Where the scrambler meant to be: the tracked point, or after a slip, the point they thought they'd reached. */
 function meantPoint(r: Report): number {
@@ -486,8 +528,9 @@ function drawOverlay(canvas: HTMLCanvasElement | null, video: HTMLElement | null
   for (const quad of FACE_QUADS) {
     const map = squareToQuad(quad.map((j) => k[j]));
     for (let t = 1; t < frame.n; t++) {
-      line([map(t / frame.n, 0), map(t / frame.n, 1)]);
-      line([map(0, t / frame.n), map(1, t / frame.n)]);
+      const at = frame.edges ? frame.edges[t] : t / frame.n;
+      line([map(at, 0), map(at, 1)]);
+      line([map(0, at), map(1, at)]);
     }
   }
   c.strokeStyle = "#5cc8e6";

@@ -4,7 +4,7 @@
 // reader file per cube size (reader-N.onnx), loaded the first time that size is read.
 import type * as Ort from "onnxruntime-web";
 import { FACE_QUADS, squareToQuad, type Point } from "./check";
-import { faceWindings } from "./nxn-check";
+import { faceWindings, layerMap } from "./nxn-check";
 
 type OrtModule = typeof Ort;
 declare global {
@@ -204,14 +204,17 @@ export async function findCube(models: Models, source: Source, previous: Point[]
 }
 
 // Straighten each face to size x size like OpenCV's warpPerspective (bilinear, black outside the frame).
-export function faceMaps(frame: ImageData, corners: Point[], size: number): Float32Array {
+// edges (layerEdges) is for a cube whose outer layers are thicker: each layer is stretched or squeezed to
+// the same number of pixels, so every sticker still lands in its own cell, where the reader expects it.
+export function faceMaps(frame: ImageData, corners: Point[], size: number, edges?: number[]): Float32Array {
   const n = size * size, out = new Float32Array(3 * 3 * n), { data, width: W, height: H } = frame;
   const px = (x: number, y: number, ch: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : data[4 * (y * W + x) + ch]);
+  const along = edges ? layerMap(edges, size) : Float64Array.from({ length: size }, (_, x) => x / size);
   FACE_QUADS.forEach((quad, f) => {
     const map = squareToQuad(quad.map((j) => corners[j]));
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
-        const [sx, sy] = map(x / size, y / size);
+        const [sx, sy] = map(along[x], along[y]);
         const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0;
         for (let ch = 0; ch < 3; ch++) {
           const top = px(x0, y0, ch) * (1 - fx) + px(x0 + 1, y0, ch) * fx;
@@ -224,10 +227,13 @@ export function faceMaps(frame: ImageData, corners: Point[], size: number): Floa
   return out;
 }
 
-/** 3N² x 7 probabilities, row-major: face k, row j, column i; the 6 colours (URFDLB), then covered. */
-export async function readStickers(models: Models, frame: ImageData, corners: Point[], n = 3): Promise<Float32Array> {
+/**
+ * 3N² x 7 probabilities, row-major: face k, row j, column i; the 6 colours (URFDLB), then covered.
+ * edges: layerEdges() for a cube whose layers aren't equally thick (none: equal layers).
+ */
+export async function readStickers(models: Models, frame: ImageData, corners: Point[], n = 3, edges?: number[]): Promise<Float32Array> {
   const size = models.meta.sticker_px * n, reader = await models.reader(n);
-  const faces = new models.ort.Tensor("float32", faceMaps(frame, corners, size), [1, 3, 3, size, size]);
+  const faces = new models.ort.Tensor("float32", faceMaps(frame, corners, size, edges), [1, 3, 3, size, size]);
   return (await reader.run({ faces })).probs.data as Float32Array;
 }
 

@@ -42,11 +42,45 @@ export function cells(n: number): Uint16Array[] {
 /** The fixed middle sticker of each visible face (odd cubes only). */
 export const middleCells = (n: number) => (n % 2 ? [0, 1, 2].map((k) => k * n * n + Math.floor(n / 2) * n + Math.floor(n / 2)) : []);
 
-/** Image positions of the 3N² sticker centres: face k, row j, column i. */
-export function cellCentres(corners: Point[], n: number): Point[] {
+// Layer widths measured on real cubes with a caliper, in mm: [outer layer, inner layer]. Big cubes are
+// built with thicker outer layers, so their sticker grid isn't even; the training renders have equal
+// layers. Measured 12 Nov 2026 on one 6×6 and one 7×7; other makes differ, so the page lets this be changed.
+export const LAYER_MM: Record<number, [number, number]> = { 6: [13.5, 9.5], 7: [13, 8.2] };
+
+/** The measured outer ÷ inner layer width for a size, 1 where the layers are taken as equal. */
+export const measuredRatio = (n: number) => (LAYER_MM[n] ? LAYER_MM[n][0] / LAYER_MM[n][1] : 1);
+
+/**
+ * Where the N layers of a face start and end, as fractions 0..1 of its width (N+1 numbers), for outer
+ * layers `ratio` times as thick as the inner ones (1: equal layers). python: nxn_check.layer_edges.
+ */
+export function layerEdges(n: number, ratio = 1): number[] {
+  const widths = n > 1 ? [ratio, ...Array(n - 2).fill(1), ratio] : [1];
+  const total = widths.reduce((a, b) => a + b, 0);
+  let sum = 0;
+  return [0, ...widths.map((w) => (sum += w) / total)];
+}
+
+/**
+ * For a face straightened to `size` pixels a side: where pixel x of the straightened face is on the real
+ * face (0..1). Each layer gets the same number of pixels, so every sticker lands in its own cell whatever
+ * the layer widths. python: reader.face_maps(..., edges).
+ */
+export function layerMap(edges: number[], size: number): Float64Array {
+  const n = edges.length - 1, out = new Float64Array(size);
+  for (let x = 0; x < size; x++) {
+    const t = (x / size) * n, i = Math.min(n - 1, Math.floor(t));
+    out[x] = edges[i] + (t - i) * (edges[i + 1] - edges[i]);
+  }
+  return out;
+}
+
+/** Image positions of the 3N² sticker centres: face k, row j, column i. edges: layerEdges() for uneven layers. */
+export function cellCentres(corners: Point[], n: number, edges?: number[]): Point[] {
+  const mid = Array.from({ length: n }, (_, i) => (edges ? (edges[i] + edges[i + 1]) / 2 : (i + 0.5) / n));
   return FACE_QUADS.flatMap((quad) => {
     const map = squareToQuad(quad.map((j) => corners[j]));
-    return Array.from({ length: n * n }, (_, m) => map(((m % n) + 0.5) / n, (Math.floor(m / n) + 0.5) / n));
+    return Array.from({ length: n * n }, (_, m) => map(mid[m % n], mid[Math.floor(m / n)]));
   });
 }
 
