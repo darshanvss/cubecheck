@@ -48,7 +48,7 @@ Big cubes aren't cut into equal layers: the outer layers are thicker, so the cub
 
 So when a face is straightened, each layer is stretched or squeezed to the same 24 pixels. The reader then sees every sticker in its own cell, as in training, and doesn't need retraining. In simulation (renders re-proportioned to the measured widths, read with true corners), the second ring of a 7×7 went from 94.2% of stickers read right with the even grid to 98.3% with the measured one, the same as on the renders themselves. On a 6×6 the gain is small (98.1% to 98.5% overall).
 
-Other makes of cube have other proportions, so on 4×4 to 7×7 the page has an **Outer layers** setting next to the grid switch: even, 1.2×, 1.4×, 1.8×, or the measured ratio (the default on 6×6 and 7×7; 4×4 and 5×5 start even). The grid drawn on the cube follows it, so a wrong setting is easy to see. Python takes the same widths: `nxn_check.layer_edges(n, (outer, inner))`, passed to `reader.read_grid(..., edges=...)` and `nxn_check.cell_centres(..., edges)`.
+The page always uses these measured widths on 6×6 and 7×7 (2×2 to 5×5 keep equal layers), and the grid drawn on the cube follows them. Python takes the same widths: `nxn_check.layer_edges(n, (outer, inner))`, passed to `reader.read_grid(..., edges=...)` and `nxn_check.cell_centres(..., edges)`; pass other widths there for a cube made differently.
 
 ## 3. Check against the scramble
 

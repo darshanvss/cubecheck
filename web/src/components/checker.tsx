@@ -25,10 +25,6 @@ const HOLD_CLEAR = 1500; // follow-along says it can't see the cube only after t
 const HOLD_OFF = 2500;
 const MODE_KEY = "cubecheck-mode";
 const GRID_KEY = "cubecheck-grid"; // "off": no grid or sticker dots drawn on the cube
-const LAYERS_KEY = "cubecheck-layers"; // outer ÷ inner layer width per cube size, where it was changed
-// Sizes whose layer widths can be set: big cubes have thicker outer layers (measured on a 6×6 and 7×7).
-const LAYER_SIZES = [4, 5, 6, 7];
-const LAYER_CHOICES = [1, 1.2, 1.4, 1.6, 1.8];
 
 // Smaller than this (the mean edge, in pixels), stickers are too few pixels to read.
 const minCubePx = (n: number) => (n === 3 ? 60 : PX_PER_STICKER * n);
@@ -70,8 +66,6 @@ export function Checker() {
   // camera isn't (there the picture already matches what you see), so there's no switch for it.
   const [mirror, setMirror] = useState(true);
   const [grid, setGrid] = useState(true); // the cube's outline, its sticker grid and the colours read, drawn on the picture
-  const [layerRatio, setLayerRatio] = useState<Record<number, number>>({}); // outer ÷ inner layer width, where changed
-  const ratio = (n: number) => layerRatio[n] ?? measuredRatio(n);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [settled, setSettled] = useState<string>("");
 
@@ -98,7 +92,8 @@ export function Checker() {
   const valid = scrambles.filter((s) => s.state);
   const following = mode === "follow";
   const target: Scramble | undefined = following ? valid.find((s) => s.number === followed) ?? valid[0] : undefined;
-  const r = ratio(size), edges = r === 1 ? undefined : layerEdges(size, r);
+  // Big cubes have thicker outer layers: the grid follows the measured widths (6×6, 7×7), even elsewhere.
+  const r = measuredRatio(size), edges = r === 1 ? undefined : layerEdges(size, r);
   const latest = useRef({ models, scrambles, following, target, size, valid, edges });
   latest.current = { models, scrambles, following, target, size, valid, edges };
 
@@ -112,18 +107,6 @@ export function Checker() {
       if (localStorage.getItem(GRID_KEY) === "off") setGrid(false);
     } catch {}
   }, []);
-  useEffect(() => {
-    try {
-      setLayerRatio(JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}"));
-    } catch {}
-  }, []);
-  const chooseRatio = (n: number, value: number) => {
-    const next = { ...layerRatio, [n]: value };
-    setLayerRatio(next);
-    try {
-      localStorage.setItem(LAYERS_KEY, JSON.stringify(next));
-    } catch {}
-  };
   const switchGrid = () => {
     setGrid(!grid);
     try {
@@ -269,7 +252,7 @@ export function Checker() {
     const run = () => void analyse(img, img.naturalWidth, img.naturalHeight, false);
     if (img.complete && img.naturalWidth) run();
     else img.onload = run;
-  }, [photo, models, scrambles, analyse, r]); // r: the layer widths changed
+  }, [photo, models, scrambles, analyse]);
 
   const choosePhoto = (file: File | undefined) => {
     if (!file) return;
@@ -396,20 +379,6 @@ export function Checker() {
                 {models ? `${models.backend === "webgpu" ? "GPU" : "CPU"}${frame ? ` · ${frame.ms.toFixed(0)} ms` : ""}` : "Loading…"}
               </span>
               <div className="flex gap-1.5">
-                {LAYER_SIZES.includes(size) && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <label className="flex h-8 items-center gap-1 rounded-lg bg-black/55 pl-2 pr-1 text-[11px] text-white/80 hover:text-white">
-                        Outer layers
-                        <select aria-label="How much thicker the outer layers are than the inner ones" value={ratioChoice(ratio(size), size)}
-                          onChange={(e) => chooseRatio(size, Number(e.target.value))} className="h-6 rounded-md bg-transparent text-[11px] tabular-nums text-white outline-none [&>option]:text-black">
-                          {ratioOptions(size).map((v) => <option key={v} value={v}>{ratioLabel(v, size)}</option>)}
-                        </select>
-                      </label>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-64 text-balance">Big cubes are made with thicker outer layers. The sticker grid follows this setting; change it if the grid doesn&apos;t sit on your cube&apos;s stickers.</TooltipContent>
-                  </Tooltip>
-                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button aria-label={grid ? "Hide the grid on the cube" : "Show the grid on the cube"} aria-pressed={grid} onClick={switchGrid} className="grid size-8 place-items-center rounded-lg bg-black/55 text-white/80 hover:text-white">
@@ -449,14 +418,6 @@ export function Checker() {
     </div>
   );
 }
-
-/** The layer ratios offered for a size: the usual steps, and the measured one where there is one. */
-function ratioOptions(n: number): number[] {
-  const measured = Math.round(measuredRatio(n) * 100) / 100;
-  return [...LAYER_CHOICES.filter((v) => Math.abs(v - measured) >= 0.05), measured].sort((a, b) => a - b);
-}
-const ratioChoice = (r: number, n: number) => ratioOptions(n).reduce((best, v) => (Math.abs(v - r) < Math.abs(best - r) ? v : best));
-const ratioLabel = (v: number, n: number) => (v === 1 ? "even" : `${v}×`) + (v === Math.round(measuredRatio(n) * 100) / 100 && v !== 1 ? " (measured)" : "");
 
 /** Where the scrambler meant to be: the tracked point, or after a slip, the point they thought they'd reached. */
 function meantPoint(r: Report): number {
