@@ -5,6 +5,7 @@
 import type * as Ort from "onnxruntime-web";
 import { FACE_QUADS, squareToQuad, type Point } from "./check";
 import { faceWindings, layerMap } from "./nxn-check";
+import { inv3, poly, type PolyEvent } from "./poly";
 
 type OrtModule = typeof Ort;
 declare global {
@@ -134,13 +135,16 @@ export interface Step {
   view: View;
 }
 
-async function runCorners(models: Models, net: Ort.InferenceSession, source: CanvasImageSource, v: View, canvas: HTMLCanvasElement): Promise<Omit<Step, "net">> {
+/** What finding corners needs: the runtime, the two networks and their settings (a cube's, or another puzzle's). */
+type CornerNets = Pick<Models, "ort" | "finder" | "refiner"> & { meta: Pick<Meta, "in_px" | "passes" | "refine_margin" | "min_present" | "min_find" | "zoom"> };
+
+async function runCorners(models: CornerNets, net: Ort.InferenceSession, source: CanvasImageSource, v: View, canvas: HTMLCanvasElement): Promise<Omit<Step, "net">> {
   const size = models.meta.in_px;
   const image = new models.ort.Tensor("float32", cut(source, v, size, canvas), [1, 3, size, size]);
   const out = await net.run({ image });
   const xy = out.corners.data as Float32Array, s = size / v.side;
   const corners: Point[] = [];
-  for (let k = 0; k < 7; k++) corners.push([(xy[2 * k] * size - size / 2) / s + v.cx, (xy[2 * k + 1] * size - size / 2) / s + v.cy]);
+  for (let k = 0; k < xy.length / 2; k++) corners.push([(xy[2 * k] * size - size / 2) / s + v.cx, (xy[2 * k + 1] * size - size / 2) / s + v.cy]);
   return { corners, present: (out.present.data as Float32Array)[0], view: v };
 }
 
@@ -181,8 +185,12 @@ export interface Found {
  * them and skips the finder (corners.track).
  */
 export async function findCube(models: Models, source: Source, previous: Point[] | null = null, canvas = document.createElement("canvas")): Promise<Found> {
-  const { passes, refine_margin: margin, min_present: min, min_find: minFind, zoom, two_faces: twoFaces } = models.meta;
-  const shaped = (kp: Point[]) => cubeShaped(kp, twoFaces);
+  return findCorners(models, (kp) => cubeShaped(kp, models.meta.two_faces), source, previous, canvas);
+}
+
+/** findCube for any shape: `shaped` says whether a set of corners is a proper view of it. */
+async function findCorners(models: CornerNets, shaped: (kp: Point[]) => boolean, source: Source, previous: Point[] | null, canvas: HTMLCanvasElement): Promise<Found> {
+  const { passes, refine_margin: margin, min_present: min, min_find: minFind, zoom } = models.meta;
   if (previous) {
     const step = await runCorners(models, models.refiner, source, refineView(previous, margin), canvas);
     if (step.present >= min && shaped(step.corners)) return { steps: [{ net: "refiner", ...step }], corners: step.corners, present: step.present };
@@ -244,4 +252,90 @@ export function framePixels(source: Source, canvas = document.createElement("can
   const c = canvas.getContext("2d", { willReadFrequently: true })!;
   c.drawImage(source, 0, 0, source.width, source.height);
   return c.getImageData(0, 0, source.width, source.height);
+}
+
+// --- skewb, pyraminx and FTO (experimental): python/cubecheck/poly_corners.py and poly_reader.py ---
+
+export interface PolyMeta {
+  event: PolyEvent;
+  corners: string;
+  reader: string;
+  in_px: number;
+  face_px: number; // each face is straightened into a square this many pixels a side (a triangle with C at the top)
+  keypoints: number;
+  refine_margin: number;
+  passes: number;
+  min_present: number;
+  min_find: number;
+  zoom: number;
+  colours: number;
+}
+
+export interface PolyModels {
+  ort: OrtModule;
+  meta: PolyMeta;
+  finder: Ort.InferenceSession;
+  refiner: Ort.InferenceSession;
+  reader: Ort.InferenceSession;
+  backend: Models["backend"];
+}
+
+const polyLoaded = new Map<string, Promise<PolyModels>>();
+
+/** One puzzle's three networks (models/<event>/), loaded the first time it's chosen: about 23 MB. */
+export function loadPolyModels(event: PolyEvent, base = "/models/", backend?: Models["backend"]): Promise<PolyModels> {
+  const chosen = backend ?? (Reflect.has(navigator, "gpu") ? "webgpu" : "wasm"), key = `${base}${event}|${chosen}`;
+  if (!polyLoaded.has(key)) {
+    polyLoaded.set(key, (async () => {
+      const ort = await loadRuntime(), dir = `${base}${event}/`;
+      const found = await fetch(`${dir}meta.json`, { cache: "no-cache" });
+      if (!found.ok) throw new Error(`the ${poly(event).d.name} models aren't on this site yet`);
+      const meta: PolyMeta = await found.json();
+      const options = { executionProviders: chosen === "webgpu" ? ["webgpu", "wasm"] : ["wasm"] };
+      const open = async (name: string) => ort.InferenceSession.create(new Uint8Array(await (await fetch(`${dir}${name}.onnx`, { cache: "no-cache" })).arrayBuffer()), options);
+      const finder = await open("finder"), refiner = await open("refiner"), reader = await open("reader");
+      return { ort, meta, finder, refiner, reader, backend: chosen };
+    })());
+    polyLoaded.get(key)!.catch(() => polyLoaded.delete(key));
+  }
+  return polyLoaded.get(key)!;
+}
+
+/** The puzzle's corners (poly_corners.PolyCornerFinder): as findCube, with the shape's own test of a proper view. */
+export function findPoly(models: PolyModels, source: Source, previous: Point[] | null = null, canvas = document.createElement("canvas")): Promise<Found> {
+  const p = poly(models.meta.event);
+  return findCorners(models, (kp) => p.wellFormed(kp, p.d.foundFaces), source, previous, canvas);
+}
+
+/**
+ * The visible faces straightened (poly_reader.face_maps): each face's (u, v) map in the picture, then onto
+ * the face's own square (a skewb's as a cube's, a triangle upright with C at the top), bilinear, black outside.
+ */
+export function polyFaceMaps(frame: ImageData, matrices: number[][][], event: PolyEvent): Float32Array {
+  const p = poly(event), size = p.d.facePx, n = size * size, out = new Float32Array(matrices.length * 3 * n), { data, width: W, height: H } = frame;
+  const px = (x: number, y: number, ch: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : data[4 * (y * W + x) + ch]);
+  const toMap = inv3(p.d.mapMatrix);
+  matrices.forEach((m, f) => {
+    // picture = m · (face map)⁻¹ · pixel
+    const h = m.map((row) => [0, 1, 2].map((j) => row.reduce((s, v, k) => s + v * toMap[k][j], 0)));
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const w = h[2][0] * x + h[2][1] * y + h[2][2], sx = (h[0][0] * x + h[0][1] * y + h[0][2]) / w, sy = (h[1][0] * x + h[1][1] * y + h[1][2]) / w;
+        const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0;
+        for (let ch = 0; ch < 3; ch++) {
+          const top = px(x0, y0, ch) * (1 - fx) + px(x0 + 1, y0, ch) * fx;
+          const bottom = px(x0, y0 + 1, ch) * (1 - fx) + px(x0 + 1, y0 + 1, ch) * fx;
+          out[f * 3 * n + ch * n + y * size + x] = (top * (1 - fy) + bottom * fy) / 255;
+        }
+      }
+    }
+  });
+  return out;
+}
+
+/** Probabilities per (face, slot) sticker: the puzzle's colours in its face order, then covered. */
+export async function readPoly(models: PolyModels, frame: ImageData, matrices: number[][][]): Promise<Float32Array> {
+  const { event, face_px: s } = models.meta;
+  const faces = new models.ort.Tensor("float32", polyFaceMaps(frame, matrices, event), [1, matrices.length, 3, s, s]);
+  return (await models.reader.run({ faces })).probs.data as Float32Array;
 }

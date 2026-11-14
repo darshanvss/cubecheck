@@ -2,14 +2,15 @@
 
     uv run --extra models python scripts/download_models.py
 
-Gives runs/corners/c7/{finder,refiner}.pt and runs/reader/r4/best.pt (and the earlier models, c2 and r2).
+Gives runs/corners/c7/{finder,refiner}.pt and runs/reader/r4/best.pt (and the earlier models, c2 and r2),
+and for skewb, pyraminx and FTO runs/corners/{skewb-c1,pyram-c2,fto-c2}/ and runs/reader/{skewb-r1,pyram-r2,fto-r2}/.
 """
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
 REPO = "darshanvss/cubecheck"
-REVISION = "v0.2.0"  # a release tag, so a checkout gets the weights it was tested with
+REVISION = "v0.3.0"  # a release tag, so a checkout gets the weights it was tested with
 
 
 def main() -> None:

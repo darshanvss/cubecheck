@@ -31,3 +31,15 @@ def test_starts_over_after_a_gap():
     s = CornerSmoother()
     s.update(KP, 0.0)
     assert np.allclose(s.update(KP + 40, 2.0), KP + 40)
+    s.update(KP, 0.0)
+    assert np.allclose(s.update(KP + 40, 2.0), KP + 40)
+
+
+def test_other_shapes_bring_their_own_corner_orders():
+    """A pyraminx has 4 corners, and its answer may come back in any of the orders the shape allows."""
+    kp = np.array([[300.0, 200.0], [500.0, 420.0], [180.0, 430.0], [330.0, 330.0]])
+    orders = [[0, 1, 2, 3], [1, 2, 0, 3], [2, 0, 1, 3]]  # the ring started at each face (shapes.Shape.relabellings)
+    s = CornerSmoother(rotations=orders, spokes=(0, 1, 2))
+    s.update(kp, 0.0)
+    out = s.update(kp[orders[1]] + 1.0, 1 / 15)
+    assert out.shape == (4, 2) and np.abs(out - kp).max() < 2.0  # lined up with the first frame, not jumped

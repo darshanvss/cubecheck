@@ -15,7 +15,7 @@
 // too little change nothing.
 
 import { cells, middleCells } from "./nxn-check.ts";
-import { cube, type Cube, type NState } from "./nxn.ts";
+import { cube, type NState } from "./nxn.ts";
 
 // How far on the scrambler probably is at the next still look: 0, 1, ... 6 moves.
 const STEP = [0.4, 0.22, 0.12, 0.09, 0.07, 0.05, 0.05];
@@ -88,7 +88,7 @@ export class Mistake {
     this.state = state;
   }
 
-  /** The way back: undo these (newest first), then do these, then carry on from `resume`. */
+  /** The way back: undo these (newest first), then do these, then carry on from `resume` (a cube's; other puzzles: Follower.fix). */
   fix(moves: string[]): Fix {
     const k = this.move, inv = (ms: string[]) => [...ms].reverse().map(inverse);
     let undo: string[], then: string[] = [], resume = k;
@@ -132,6 +132,7 @@ export interface Report {
   sure: number;
   clear: boolean; // this look was clear enough to judge
   half: boolean; // halfway through the next move's half turn
+  ahead?: boolean; // other puzzles: a later move that nothing in between disturbs is already done
   status: "following" | "done" | "unclear" | "mistake";
   mistake?: { kind: Kind; move: number; done: string | null; after: number };
   undo?: string[];
@@ -151,24 +152,47 @@ export interface FollowOptions {
   confirm?: number;
 }
 
+/** What the tracker needs of a puzzle: its solved state and its turns. */
+export interface Turner {
+  solved: NState;
+  turn(state: NState, move: string): NState;
+}
+
+/**
+ * A puzzle for the tracker other than an N×N cube (poly-follow.ts): the puzzle, the scramble's moves, every
+ * turn a slip can be, the sticker place behind each sticker read for every way round, and the reader's
+ * number of colours.
+ */
+export interface Setup {
+  puzzle: Turner;
+  moves: string[];
+  turnList: string[];
+  cells: Uint16Array[];
+  middles: number[];
+  colours: number;
+}
+
 export class Follower {
-  readonly n: number;
-  readonly c: Cube;
+  readonly n: number; // the cube's size; 0 for other puzzles
+  readonly c: Turner;
   readonly moves: string[];
   readonly points: NState[]; // the cube after 0..L moves
-  readonly halves = new Map<number, [NState, NState]>(); // halfway through move i's half turn, either way round
+  halves = new Map<number, NState[]>(); // states that count as point i: halfway through move i's half turn, either way round
+  readonly turnList: string[];
+  readonly colours: number; // the reader's answers per sticker: this many colours, then "covered"
+  protected halfMargin = 0; // how much better "halfway" must fit than the point itself to be reported
   readonly after: number;
   readonly before: number;
-  private jump: number;
-  private temper: number;
-  private minSeen: number;
-  private maxCost: number;
-  private minEvidence: number;
-  private confirm: number;
+  protected jump: number;
+  protected temper: number;
+  protected minSeen: number;
+  protected maxCost: number;
+  protected minEvidence: number;
+  protected confirm: number;
   belief: Float64Array;
-  private cells: Uint16Array[];
-  private middles: number[];
-  private onScramble: Set<string>;
+  protected cells: Uint16Array[];
+  protected middles: number[];
+  protected onScramble: Set<string>;
   private streak = 0;
   mistake: Mistake | null = null;
   private looks = 0;
@@ -178,10 +202,17 @@ export class Follower {
   /** Why the last look changed nothing: "few" stickers seen, or "off" the scramble (no point or nearby slip fits); null: it counted. */
   why: "few" | "off" | null = null;
 
-  constructor(scramble: string, n: number, { after = 6, before = 2, jump = 0.02, temper = 3, minSeen = 0.3, maxCost = 0.6, minEvidence = 8, confirm = 2 }: FollowOptions = {}) {
-    this.n = n;
-    this.c = cube(n);
-    this.moves = this.c.parse(scramble);
+  /** n: an N×N cube's size, or another puzzle's Setup (then `scramble` is already in setup.moves). */
+  constructor(scramble: string, n: number | Setup, { after = 6, before = 2, jump = 0.02, temper = 3, minSeen = 0.3, maxCost = 0.6, minEvidence = 8, confirm = 2 }: FollowOptions = {}) {
+    if (typeof n === "number") {
+      const c = cube(n);
+      n = { puzzle: c, moves: c.parse(scramble), turnList: c.eventTurns, cells: cells(n), middles: middleCells(n), colours: 6 };
+      this.n = c.n;
+    } else this.n = 0;
+    this.c = n.puzzle;
+    this.moves = n.moves;
+    this.turnList = n.turnList;
+    this.colours = n.colours;
     this.after = after;
     this.before = before;
     this.jump = jump;
@@ -194,14 +225,21 @@ export class Follower {
     for (const m of this.moves) this.points.push(this.c.turn(this.points[this.points.length - 1], m));
     this.moves.forEach((m, i) => {
       const q = quarter(m);
-      if (q) this.halves.set(i, [this.c.turn(this.points[i], q), this.c.turn(this.points[i], `${q}'`)]);
+      if (q && this.n) this.halves.set(i, [this.c.turn(this.points[i], q), this.c.turn(this.points[i], `${q}'`)]);
     });
     const L = this.moves.length;
     this.belief = new Float64Array(L + 1).fill(0.1 / (L + 1));
     this.belief[0] += 0.9; // a scramble starts from a solved cube
-    this.cells = cells(n);
-    this.middles = middleCells(n);
-    this.onScramble = new Set([...this.points, ...[...this.halves.values()].flat()].map(keyOf));
+    this.cells = n.cells;
+    this.middles = n.middles;
+    this.onScramble = new Set();
+    this.setHalves(this.halves);
+  }
+
+  /** The states that count as each point besides its own (the scramble's, for mistakesNear, includes them). */
+  protected setHalves(halves: Map<number, NState[]>): void {
+    this.halves = halves;
+    this.onScramble = new Set([...this.points, ...[...halves.values()].flat()].map(keyOf));
   }
 
   // --- the two HMM steps ---
@@ -219,11 +257,11 @@ export class Follower {
 
   /** Total cost of the seen stickers for each state, in its best orientation. */
   fits(probs: ArrayLike<number>, unknown: boolean[], states: NState[], cap = 5): Float64Array {
-    const m = unknown.length, rows: number[] = [];
+    const m = unknown.length, rows: number[] = [], C = this.colours, W = C + 1;
     const full = Array.from({ length: m }, (_, i) => {
       let sum = 0;
-      for (let k = 0; k < 6; k++) sum += probs[7 * i + k];
-      return Array.from({ length: 6 }, (_, k) => Math.min(-Math.log(Math.max(probs[7 * i + k] / Math.max(sum, 1e-9), 1e-9)), cap));
+      for (let k = 0; k < C; k++) sum += probs[W * i + k];
+      return Array.from({ length: C }, (_, k) => Math.min(-Math.log(Math.max(probs[W * i + k] / Math.max(sum, 1e-9), 1e-9)), cap));
     });
     unknown.forEach((u, i) => u || rows.push(i));
     let orients = this.cells.map((_, o) => o);
@@ -249,19 +287,21 @@ export class Follower {
 
   /** Update with one look: the reader's (3N² x 7) probabilities and which stickers are in view. */
   look(probs: ArrayLike<number>, inside: boolean[], covered = 0.5): Report {
-    const unknown = inside.map((v, i) => !v || probs[7 * i + 6] > covered), seen = unknown.filter((u) => !u).length;
+    const W = this.colours + 1, unknown = inside.map((v, i) => !v || probs[W * i + this.colours] > covered), seen = unknown.filter((u) => !u).length;
     this.why = null;
     if (seen < this.minSeen * inside.length) {
       this.why = "few";
       return this.report(false);
     }
-    let f = this.fits(probs, unknown, this.points);
-    const half = new Float64Array(f.length).fill(Infinity); // halfway through move k's half turn, as point k
+    const plain = this.fits(probs, unknown, this.points);
+    const half = new Float64Array(plain.length).fill(Infinity); // halfway through move k's half turn, as point k
     if (this.halves.size) {
+      // each point's own few (two for a half turn), the best of them
       const idx = [...this.halves.keys()], g = this.fits(probs, unknown, idx.flatMap((i) => this.halves.get(i)!));
-      idx.forEach((i, j) => (half[i] = Math.min(g[2 * j], g[2 * j + 1])));
+      let j = 0;
+      for (const i of idx) for (const _ of this.halves.get(i)!) half[i] = Math.min(half[i], g[j++]);
     }
-    f = f.map((v, i) => Math.min(v, half[i]));
+    const f = plain.map((v, i) => Math.min(v, half[i]));
     const fmin = Math.min(...f);
     // A mistake first, judged from where the cube was before this look: near where it was believed to
     // be, and near the point this look fits best (a jump, or a tracker that started late).
@@ -273,7 +313,7 @@ export class Follower {
       // Of the mistakes that fit about as well as the best, the likeliest story.
       let j = -1;
       g.forEach((v, i) => {
-        if (v <= gmin + 1 && (j < 0 || less(cands[i].rank(this.moves, at), cands[j].rank(this.moves, at)))) j = i;
+        if (v <= gmin + 1 && (j < 0 || less(this.rank(cands[i], at), this.rank(cands[j], at)))) j = i;
       });
       if (fmin - g[j] > this.minEvidence && g[j] / seen <= this.maxCost) {
         this.streak++;
@@ -303,7 +343,7 @@ export class Follower {
     const post = prior.map((p, i) => p * like[i]), sum = post.reduce((a, b) => a + b, 0);
     this.belief = post.map((p) => p / sum);
     const k = argmin(this.belief.map((b) => -b));
-    this.half = half[k] <= f[k] && this.halves.has(k);
+    this.half = this.halves.has(k) && half[k] <= plain[k] - this.halfMargin;
     return this.report(true);
   }
 
@@ -314,7 +354,7 @@ export class Follower {
     this.path = new Set();
     if (!m) return;
     let st = m.state;
-    const f = m.fix(this.moves);
+    const f = this.fix(m);
     for (const move of [...f.undo, ...f.then]) {
       const q = quarter(move);
       if (q) {
@@ -340,8 +380,8 @@ export class Follower {
       for (const [kind, tail] of tails) {
         let firsts: (string | null)[];
         if (kind === "skipped" || kind === "swapped") firsts = [null];
-        else if (kind === "wrong") firsts = this.c.eventTurns.filter((t) => t !== this.moves[i]);
-        else firsts = this.c.eventTurns.filter((t) => !this.neighbours(i, t).has(turns(t)[0])); // R R2 is a wrong R, R' R a skip
+        else if (kind === "wrong") firsts = this.turnList.filter((t) => t !== this.moves[i]);
+        else firsts = this.turnList.filter((t) => !this.meets(i, t)); // R R2 is a wrong R, R' R a skip
         for (const t of firsts) {
           let st = kind === "swapped" ? this.c.turn(this.c.turn(base, this.moves[i + 1]), this.moves[i]) : t === null ? base : this.c.turn(base, t);
           for (let a = 0; a <= this.after; a++) {
@@ -354,12 +394,27 @@ export class Follower {
             const key = keyOf(st);
             if (this.onScramble.has(key)) continue;
             const m = new Mistake(kind, i, t, a, st), had = out.get(key);
-            if (!had || less(m.rank(this.moves, at), had.rank(this.moves, at))) out.set(key, m);
+            if (!had || less(this.rank(m, at), this.rank(had, at))) out.set(key, m);
           }
         }
       }
     }
     return [...out.values()];
+  }
+
+  /** The way back from a mistake (Mistake.fix). */
+  fix(m: Mistake): Fix {
+    return m.fix(this.moves);
+  }
+
+  /** Smaller is the likelier story for the same cube (Mistake.rank). */
+  rank(m: Mistake, at: number): number[] {
+    return m.rank(this.moves, at);
+  }
+
+  /** An extra turn t before move i that is really a wrong move or a skip (see neighbours). */
+  meets(i: number, t: string): boolean {
+    return this.neighbours(i, t).has(turns(t)[0]);
   }
 
   /** The layers of the moves an extra turn t before move i meets: the moves either side, and on past those of t's axis. */
@@ -380,7 +435,7 @@ export class Follower {
     const out: Report = { position: k, total: this.moves.length, sure: Math.round(this.belief[k] * 1000) / 1000, clear, half: this.half && !this.mistake, status: "following" };
     if (this.mistake) {
       const m = this.mistake;
-      return { ...out, status: "mistake", mistake: { kind: m.kind, move: m.move, done: m.done, after: m.after }, ...m.fix(this.moves) };
+      return { ...out, status: "mistake", mistake: { kind: m.kind, move: m.move, done: m.done, after: m.after }, ...this.fix(m) };
     }
     if (!clear && this.looks) return { ...out, status: "unclear" };
     return { ...out, status: k === this.moves.length && this.belief[k] > 0.8 ? "done" : "following" };

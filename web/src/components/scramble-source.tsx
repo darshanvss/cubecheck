@@ -6,14 +6,15 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { EVENT_NAME, SIZES, randomScramble } from "@/lib/nxn";
-import { parseLines, sizeOf, type Line } from "@/lib/scrambles";
+import { SIZES, randomScramble } from "@/lib/nxn";
+import { POLY_EVENTS, isPoly, poly } from "@/lib/poly";
+import { parseLines, puzzleName, sizeOf, type Line, type Puzzle } from "@/lib/scrambles";
 import { NotTnoodleError, PasswordError, byEvent, eventName, loadPdfJs, readTnoodlePdf, setName, type ScrambleSet } from "@/lib/tnoodle";
 import { cn } from "@/lib/utils";
 
 export interface Source {
   lines: Line[];
-  size: number;
+  size: Puzzle; // a cube's N, or another puzzle (experimental)
   name: string; // what the list is: "3×3", "4×4 · Round 1 · Group A"
 }
 
@@ -67,7 +68,7 @@ const CLOSE = <path d="M18 6 6 18M6 6l12 12" />;
 export function ScrambleSource({ onChange, children }: { onChange: (s: Source) => void; children: React.ReactNode }) {
   const [text, setText] = useState("");
   const [editing, setEditing] = useState(false);
-  const [picked, setPicked] = useState<number | null>(null); // a size chosen by hand; null: guessed from the moves
+  const [picked, setPicked] = useState<Puzzle | null>(null); // a puzzle chosen by hand; null: guessed from the moves
   const lines = useMemo(() => parseLines(text), [text]);
   const guessed = useMemo(() => sizeOf(lines), [lines]);
   const size = picked ?? guessed;
@@ -101,7 +102,7 @@ export function ScrambleSource({ onChange, children }: { onChange: (s: Source) =
   };
 
   useEffect(() => {
-    if (!pdf) onChange({ lines, size, name: EVENT_NAME[size] });
+    if (!pdf) onChange({ lines, size, name: puzzleName(size) });
     else if (chosenSet) onChange({ lines: chosenSet.scrambles.map((s) => ({ label: s.label, text: s.text })), size: chosenSet.size!, name: `${eventName(chosen!.event)} · ${setName(chosenSet)}` });
     else onChange({ lines: [], size: 3, name: "" });
   }, [pdf, lines, size, chosen, chosenSet, onChange]);
@@ -117,7 +118,7 @@ export function ScrambleSource({ onChange, children }: { onChange: (s: Source) =
       const first = byEvent(found).find((e) => e.size);
       setEvent(first?.event ?? "");
       setSetIndex(0);
-      if (!first) setPdfError("This competition has no cube events this page can check yet (2×2 to 7×7).");
+      if (!first) setPdfError("This competition has no events this page can check yet (2×2 to 7×7, skewb, pyraminx).");
     } catch (err) {
       setSets(null);
       if (err instanceof PasswordError) {
@@ -149,7 +150,8 @@ export function ScrambleSource({ onChange, children }: { onChange: (s: Source) =
   };
 
   const random = () => {
-    onText(Array.from({ length: 5 }, (_, i) => `${i + 1}. ${randomScramble(size).join(" ")}`).join("\n"));
+    const one = () => (isPoly(size) ? poly(size).randomScramble() : randomScramble(size)).join(" ");
+    onText(Array.from({ length: 5 }, (_, i) => `${i + 1}. ${one()}`).join("\n"));
     setPicked(size);
     setEditing(false);
   };
@@ -211,12 +213,15 @@ export function ScrambleSource({ onChange, children }: { onChange: (s: Source) =
             </Select>
           </>
         ) : (
-          <Select aria-label="Cube" value={size} onChange={(e) => { const n = Number(e.target.value); setPicked(n === guessed ? null : n); }}>
-            {SIZES.map((n) => <option key={n} value={n}>{EVENT_NAME[n]}</option>)}
+          <Select aria-label="Puzzle" value={String(size)} onChange={(e) => { const v = e.target.value, n: Puzzle = isPoly(v) ? v : Number(v); setPicked(n === guessed ? null : n); }}>
+            {SIZES.map((n) => <option key={n} value={n}>{puzzleName(n)}</option>)}
+            <optgroup label="Experimental">
+              {POLY_EVENTS.map((e) => <option key={e} value={e}>{puzzleName(e)}</option>)}
+            </optgroup>
           </Select>
         )}
         <div className="ml-auto flex shrink-0 items-center">
-          {!pdf && <IconButton label={`Five random ${EVENT_NAME[size]} scrambles, to try it out`} onClick={random}><Icon d={DICE} /></IconButton>}
+          {!pdf && <IconButton label={`Five random ${puzzleName(size)} scrambles, to try it out`} onClick={random}><Icon d={DICE} /></IconButton>}
           {!pdf && lines.length > 0 && !showText && <IconButton label="Edit the scrambles" onClick={edit}><Icon d={PENCIL} /></IconButton>}
           <IconButton label="Open a TNoodle PDF. It's read in this browser, never uploaded." onClick={() => fileInput.current?.click()}><Icon d={PDF} /></IconButton>
           <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="sr-only" tabIndex={-1} onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ""; }} />

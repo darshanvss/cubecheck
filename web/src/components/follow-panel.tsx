@@ -4,7 +4,8 @@ import { Fragment, useEffect, useRef } from "react";
 import { Select } from "@/components/scramble-source";
 import type { SlipWhere } from "@/lib/check";
 import type { Report } from "@/lib/follow";
-import type { Scramble } from "@/lib/scrambles";
+import { isPoly, poly } from "@/lib/poly";
+import { puzzleName, type Puzzle, type Scramble } from "@/lib/scrambles";
 import { cn } from "@/lib/utils";
 
 const TURN = (m: string) => (m.replace("'", "").endsWith("2") ? "⟳" : m.endsWith("'") ? "↺" : "↻"); // ⟳ = a half turn
@@ -75,11 +76,15 @@ const Group = ({ label, children }: { label: string; children: React.ReactNode }
 );
 
 /** What to do now: the next move (and the three after it), or the way back from a mistake. */
-export function Coach({ report, moves, offPath = false }: { report: Report | null; moves: string[]; offPath?: boolean }) {
+export function Coach({ report, moves, offPath = false, puzzle = 3 }: { report: Report | null; moves: string[]; offPath?: boolean; puzzle?: Puzzle }) {
+  const thing = isPoly(puzzle) ? "puzzle" : "cube";
   if (offPath) {
-    return <p className="text-sm text-muted-foreground">This cube isn&rsquo;t at any point of this scramble. Follow-along has to watch it from solved: solve it (or pick the scramble you&rsquo;re doing) and start again.</p>;
+    return <p className="text-sm text-muted-foreground">This {thing} isn&rsquo;t at any point of this scramble. Follow-along has to watch it from solved: solve it (or pick the scramble you&rsquo;re doing) and start again.</p>;
   }
-  if (!report) return <p className="text-sm text-muted-foreground">Hold up a solved cube, a corner toward the camera, and start turning.</p>;
+  if (!report) {
+    const hold = isPoly(puzzle) ? poly(puzzle).d.holdHint.replace(/^turn /, "").split(",")[0] : "a corner toward the camera";
+    return <p className="text-sm text-muted-foreground">Hold up a solved {isPoly(puzzle) ? puzzleName(puzzle) : "cube"}, {hold}, and start turning.</p>;
+  }
   if (report.status === "mistake") {
     const undo = report.undo!, then = report.then!;
     // merged: the undoing and the right move add up to fewer turns (D2 done for D: just D').
@@ -99,7 +104,7 @@ export function Coach({ report, moves, offPath = false }: { report: Report | nul
       </div>
     );
   }
-  if (report.status === "done") return <p className="text-sm text-muted-foreground">All {report.total} moves done. Show a solved cube for the next scramble.</p>;
+  if (report.status === "done") return <p className="text-sm text-muted-foreground">All {report.total} moves done. Show a solved {thing} for the next scramble.</p>;
   const k = report.position, next = moves[k], soon = moves.slice(k + 1, k + 4);
   return (
     <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
@@ -151,7 +156,7 @@ export function FollowView({ scrambles, target, onPick, report, blurry, offPath 
       </div>
       {/* A fixed height, whatever it says: the moves above never move. */}
       <div className="h-[7.5rem] shrink-0 overflow-y-auto border-t border-border pt-3">
-        <Coach report={report} moves={moves} offPath={offPath} />
+        <Coach report={report} moves={moves} offPath={offPath} puzzle={target.size} />
       </div>
     </div>
   );

@@ -15,6 +15,8 @@
 - **TNoodle PDFs.** Open a group's Computer Display PDF (with its passcode) or the printing PDF (with the competition password), then pick the event, round and group. The PDF is read in the browser and kept only in memory. A PDF that isn't a TNoodle scramble sheet is refused.
 - **Checks against the whole list.** It finds which scramble the cube in view matches, or says it matches none.
 - **Follow-along (beta).** It follows one scramble move by move from solved, says the moment a move goes wrong, and shows the way back. See [docs/follow-along.md](docs/follow-along.md).
+- **Big cubes as they're really made.** A 6×6 or 7×7 has thicker outer layers, and the sticker grid follows the measured widths.
+- **Skewb, pyraminx and FTO (experimental).** Checked and followed the same way, each with its own models. See [docs/other-puzzles.md](docs/other-puzzles.md).
 
 ## How it works
 
@@ -58,7 +60,7 @@ On views with two faces and a sliver, the true scramble is called correct 86–9
 | [`python/cubecheck/`](python/cubecheck/) | The models, the cube for every size, the check and follow-along, in Python |
 | [`python/scripts/`](python/scripts/) | Training, evaluation, ONNX export, model download, and the reference answers the website is tested against |
 | `python/tests/`, `web/tests/` | Tests (the TypeScript is checked against Python's answers, look by look) |
-| [`docs/`](docs/) | How it works, follow-along, how it was trained, what the training data looks like |
+| [`docs/`](docs/) | How it works, follow-along, the other puzzles, how it was trained, what the training data looks like |
 
 ## Quick start
 
@@ -82,7 +84,7 @@ uv run python -m pytest
 
 ## Models
 
-The trained weights are on Hugging Face: [darshanvss/cubecheck](https://huggingface.co/darshanvss/cubecheck), as PyTorch weights (for Python and further training) and ONNX (for the browser). Each release is a tag (`v0.1.0`: c2 + r2, 3×3 only; `v0.2.0`: c7 + r4, every size), and the code pins the one it was tested with. (The repository was called `cubecheck-3x3` until v0.2.0; the old name redirects.)
+The trained weights are on Hugging Face: [darshanvss/cubecheck](https://huggingface.co/darshanvss/cubecheck), as PyTorch weights (for Python and further training) and ONNX (for the browser). Each release is a tag (`v0.1.0`: c2 + r2, 3×3 only; `v0.2.0`: c7 + r4, every size; `v0.3.0`: adds the skewb, pyraminx and FTO models), and the code pins the one it was tested with. (The repository was called `cubecheck-3x3` until v0.2.0; the old name redirects.)
 
 ## Train on your own data
 

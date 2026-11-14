@@ -68,14 +68,14 @@ class CornerNet(nn.Module):
     sharper layers (exact position).
     """
 
-    def __init__(self, widths: tuple[int, ...] = (24, 48, 96, 160, 224), up: int = 96) -> None:
+    def __init__(self, widths: tuple[int, ...] = (24, 48, 96, 160, 224), up: int = 96, k: int = 7) -> None:
         super().__init__()
         w = widths
         self.stem = nn.Sequential(_conv(3, w[0], 2), _conv(w[0], w[0]))  # 128
         self.d1, self.d2, self.d3, self.d4 = _Down(w[0], w[1]), _Down(w[1], w[2]), _Down(w[2], w[3]), _Down(w[3], w[4])  # 64, 32, 16, 8
         self.lat = nn.ModuleList([nn.Conv2d(c, up, 1) for c in (w[4], w[3], w[2], w[1])])
         self.smooth = nn.ModuleList([_conv(up, up) for _ in range(3)])
-        self.head = nn.Sequential(_conv(up, up), nn.Conv2d(up, 7, 1))
+        self.head = nn.Sequential(_conv(up, up), nn.Conv2d(up, k, 1))  # k corners: 7 for a cube; shapes.py's puzzles have their own
         self.present = nn.Linear(w[4], 1)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

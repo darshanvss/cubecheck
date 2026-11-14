@@ -64,6 +64,10 @@ TNoodle, the WCA's scramble program, writes each scramble into its PDFs as text,
 
 A PDF with no page titled like a TNoodle scramble set is refused, and so is a file that isn't a PDF. The events found are listed in the WCA's order; the cube events from 2×2 to 7×7 can be checked (3×3 blindfolded, one-handed and Fewest Moves are 3×3 scrambles too), other puzzles show as "not yet". The PDF stays in the page's memory and is gone when the page closes.
 
+## Skewb, pyraminx and FTO (experimental)
+
+The same steps with each puzzle's own corners, faces and colours, and a pyraminx or FTO face (a triangle) placed by fitting the whole shape to its corners. See [other-puzzles.md](other-puzzles.md).
+
 ## Follow-along (beta)
 
 Instead of checking the finished cube, the page can follow one scramble move by move, from a solved cube, and say the moment a move goes wrong, with the way back. It's behind a switch that's off by default. See [follow-along.md](follow-along.md).
