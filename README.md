@@ -84,7 +84,7 @@ uv run python -m pytest
 
 ## Models
 
-The trained weights are on Hugging Face: [darshanvss/cubecheck](https://huggingface.co/darshanvss/cubecheck), as PyTorch weights (for Python and further training) and ONNX (for the browser). Each release is a tag (`v0.1.0`: c2 + r2, 3×3 only; `v0.2.0`: c7 + r4, every size), and the code pins the one it was tested with. (The repository was called `cubecheck-3x3` until v0.2.0; the old name redirects.)
+The trained weights are on Hugging Face: [darshanvss/cubecheck](https://huggingface.co/darshanvss/cubecheck), as PyTorch weights (for Python and further training) and ONNX (for the browser). Each release is a tag (`v0.1.0`: c2 + r2, 3×3 only; `v0.2.0`: c7 + r4, every size; `v0.3.0`: adds the skewb, pyraminx and FTO models), and the code pins the one it was tested with. (The repository was called `cubecheck-3x3` until v0.2.0; the old name redirects.)
 
 ## Train on your own data
 

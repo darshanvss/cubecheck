@@ -61,4 +61,4 @@ The reader is exported with one operation written differently (`python/scripts/e
 - Megaminx and square-1.
 - Real-puzzle results. The few real frames tried so far fit the shape to 0.5–4.9%, close to the 5% guard, because a real puzzle's corners are rounder than a render's and a close webcam bends the picture.
 - The skewb's corner model knows only a corner toward the camera.
-- The models and the training renders for these puzzles aren't published yet.
+- The training renders for these puzzles aren't published yet (the models are, on [Hugging Face](https://huggingface.co/darshanvss/cubecheck) since `v0.3.0`).
