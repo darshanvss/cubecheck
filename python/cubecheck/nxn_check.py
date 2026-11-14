@@ -62,9 +62,27 @@ def middle_cells(n: int) -> list[int]:
     return [k * n * n + (n // 2) * n + n // 2 for k in range(3)] if n % 2 else []
 
 
-def cell_centres(keypoints: np.ndarray, n: int) -> np.ndarray:
-    """Image positions of the 3N² sticker centres, (3N², 2)."""
-    uv = np.float32([[(i + 0.5) / n, (j + 0.5) / n] for j in range(n) for i in range(n)])
+# Layer widths measured on real cubes with a caliper, in mm: (outer layer, inner layer).
+# Big cubes are built with thicker outer layers, so their sticker grid isn't even; the
+# training renders have equal layers. Measured 12 Nov 2026 on one 6x6 and one 7x7; other
+# makes differ, which is why the website lets this be changed (see docs/how-it-works.md).
+LAYER_MM = {6: (13.5, 9.5), 7: (13.0, 8.2)}
+
+
+def layer_edges(n: int, mm: tuple[float, float] | None = None) -> np.ndarray:
+    """Where the N layers of a face start and end, as fractions 0..1 of its width (N+1 numbers).
+
+    mm is (outer layer, inner layer) in any unit; None means equal layers.
+    """
+    outer, inner = mm or (1.0, 1.0)
+    widths = [outer] + [inner] * (n - 2) + [outer] if n > 1 else [1.0]
+    return np.concatenate([[0.0], np.cumsum(widths) / np.sum(widths)])
+
+
+def cell_centres(keypoints: np.ndarray, n: int, edges: np.ndarray | None = None) -> np.ndarray:
+    """Image positions of the 3N² sticker centres, (3N², 2). edges: layer_edges() of a cube with uneven layers."""
+    mid = (np.arange(n) + 0.5) / n if edges is None else (edges[:-1] + edges[1:]) / 2
+    uv = np.float32([[mid[i], mid[j]] for j in range(n) for i in range(n)])
     out = []
     for quad in FACE_QUADS:
         H = cv2.getPerspectiveTransform(UNIT_SQUARE, keypoints[list(quad)].astype(np.float32))

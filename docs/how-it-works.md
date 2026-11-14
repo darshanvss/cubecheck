@@ -42,6 +42,14 @@ Covered stickers are left out of the check, and so are stickers on a face seen n
 
 In the browser there's one reader file per cube size (about 3 MB each), loaded the first time that size is checked.
 
+### Thicker outer layers on big cubes
+
+Big cubes aren't cut into equal layers: the outer layers are thicker, so the cube can be gripped and doesn't pop. Measured with a caliper, a 6×6 has 13.5 mm outer layers and 9.5 mm inner ones (1.42×), a 7×7 13 mm and 8.2 mm (1.59×). The training renders have equal layers, so on a real 7×7 an even grid puts the second ring's cells partly over the outer stickers next to them.
+
+So when a face is straightened, each layer is stretched or squeezed to the same 24 pixels. The reader then sees every sticker in its own cell, as in training, and doesn't need retraining. In simulation (renders re-proportioned to the measured widths, read with true corners), the second ring of a 7×7 went from 94.2% of stickers read right with the even grid to 98.3% with the measured one, the same as on the renders themselves. On a 6×6 the gain is small (98.1% to 98.5% overall).
+
+The page always uses these measured widths on 6×6 and 7×7 (2×2 to 5×5 keep equal layers), and the grid drawn on the cube follows them. Python takes the same widths: `nxn_check.layer_edges(n, (outer, inner))`, passed to `reader.read_grid(..., edges=...)` and `nxn_check.cell_centres(..., edges)`; pass other widths there for a cube made differently.
+
 ## 3. Check against the scramble
 
 1. **Expected cube.** Apply the scramble to a solved cube: all 6N² stickers.

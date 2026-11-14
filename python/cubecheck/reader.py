@@ -29,13 +29,27 @@ IGNORE = -1  # no label: out of frame, seen edge-on, or half covered
 CLASSES = FACES + "x"  # one letter per class, x = covered
 
 
-def face_maps(img_bgr: np.ndarray, keypoints: np.ndarray, size: int = FACE_PX) -> np.ndarray:
-    """The three visible faces straightened into squares, (3, size, size, 3) uint8 RGB."""
+def face_maps(img_bgr: np.ndarray, keypoints: np.ndarray, size: int = FACE_PX, edges: np.ndarray | None = None) -> np.ndarray:
+    """The three visible faces straightened into squares, (3, size, size, 3) uint8 RGB.
+
+    edges (nxn_check.layer_edges) is for a cube whose layers aren't equally thick: each
+    layer is stretched or squeezed to the same number of pixels, so every sticker still
+    lands in its own 24-pixel cell, where the reader expects it.
+    """
     square = np.float32([[0, 0], [size, 0], [size, size], [0, size]])
     out = []
+    if edges is not None:
+        n = len(edges) - 1
+        along = np.interp(np.arange(size) / size, np.linspace(0, 1, n + 1), edges) * size  # pixel -> place on the real face
+        grid = np.stack(np.meshgrid(along, along), -1).reshape(1, -1, 2).astype(np.float32)
     for quad in FACE_QUADS:
-        H = cv2.getPerspectiveTransform(keypoints[list(quad)].astype(np.float32), square)
-        face = cv2.warpPerspective(img_bgr, H, (size, size), flags=cv2.INTER_AREA, borderMode=cv2.BORDER_CONSTANT)
+        corners = keypoints[list(quad)].astype(np.float32)
+        if edges is None:
+            face = cv2.warpPerspective(img_bgr, cv2.getPerspectiveTransform(corners, square), (size, size),
+                                       flags=cv2.INTER_AREA, borderMode=cv2.BORDER_CONSTANT)
+        else:
+            xy = cv2.perspectiveTransform(grid, cv2.getPerspectiveTransform(square, corners)).reshape(size, size, 2)
+            face = cv2.remap(img_bgr, xy[..., 0], xy[..., 1], cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
         out.append(cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
     return np.stack(out)
 
@@ -162,7 +176,8 @@ def read_stickers(model: StickerReader, img_bgr: np.ndarray, keypoints: np.ndarr
 
 
 @torch.no_grad()
-def read_grid(model: GridReader, img_bgr: np.ndarray, keypoints: np.ndarray, n: int, device: str = "cpu") -> np.ndarray:
-    """Probabilities (3N², 7) for one image of an N×N cube and its 7 corners."""
-    x = to_tensor(face_maps(img_bgr, keypoints, 24 * n))[None].to(device)
+def read_grid(model: GridReader, img_bgr: np.ndarray, keypoints: np.ndarray, n: int, device: str = "cpu",
+              edges: np.ndarray | None = None) -> np.ndarray:
+    """Probabilities (3N², 7) for one image of an N×N cube and its 7 corners. edges: see face_maps()."""
+    x = to_tensor(face_maps(img_bgr, keypoints, 24 * n, edges))[None].to(device)
     return torch.softmax(model(x), dim=-1)[0].cpu().numpy()

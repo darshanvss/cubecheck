@@ -98,3 +98,40 @@ def test_a_face_seen_edge_on_is_not_read():
     kp[0], kp[1], kp[5] = [100, 92], [96, 96], [104, 96]  # P1, P2, P6 close to C
     r = readable(kp, 3, (300, 300))
     assert not r[:9].any() and r[9:].all()
+
+def test_layer_edges_follow_the_measured_widths():
+    from cubecheck.nxn_check import LAYER_MM, layer_edges
+
+    assert np.allclose(layer_edges(4), [0, 0.25, 0.5, 0.75, 1])
+    six = layer_edges(6, LAYER_MM[6])  # 13.5 mm outer, 9.5 mm inner: 65 mm across
+    assert np.allclose(six, np.array([0, 13.5, 23, 32.5, 42, 51.5, 65]) / 65)
+    seven = layer_edges(7, LAYER_MM[7])
+    assert np.isclose(seven[1], 13 / 67) and np.allclose(seven, 1 - seven[::-1])  # the same from both sides
+
+
+def test_uneven_layers_move_the_cells_and_the_straightened_face_together():
+    """With equal layers the new path gives the old picture and centres; with uneven ones each
+    layer of a striped face still lands in its own cell."""
+    from cubecheck.keypoints import FACE_QUADS
+    from cubecheck.nxn_check import cell_centres, layer_edges
+    from cubecheck.reader import face_maps
+
+    n, size = 6, 144
+    kp = np.zeros((7, 2), np.float32)
+    kp[list(FACE_QUADS[0])] = [[20, 20], [164, 20], [164, 164], [20, 164]]  # face 0 flat on, 144 px wide
+    for quad in FACE_QUADS[1:]:
+        kp[[j for j in quad if not kp[j].any()]] = [[300, 300]]
+    edges = layer_edges(n, (13.5, 9.5))
+    img = np.zeros((200, 200, 3), np.uint8)
+    for i in range(n):  # column i of the real cube is painted with brightness 40 * (i + 1)
+        img[20:164, 20 + round(edges[i] * 144):20 + round(edges[i + 1] * 144)] = 40 * (i + 1)
+
+    assert np.allclose(cell_centres(kp, n, layer_edges(n)), cell_centres(kp, n), atol=1e-4)
+    even = face_maps(img, kp, size, layer_edges(n))[0].astype(int)
+    assert np.abs(even - face_maps(img, kp, size)[0].astype(int)).mean() < 1  # the same picture as before
+
+    face = face_maps(img, kp, size, edges)[0]
+    for i in range(n):  # every 24-pixel cell holds one layer only
+        assert np.all(face[:, 24 * i + 2:24 * (i + 1) - 2] == 40 * (i + 1)), i
+    cx = cell_centres(kp, n, edges)[:n, 0]
+    assert np.allclose(cx, 20 + 144 * (edges[:-1] + edges[1:]) / 2, atol=0.5)

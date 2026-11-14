@@ -9,7 +9,7 @@ import { Icon, ScrambleSource, type Source } from "@/components/scramble-source"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FACE_QUADS, cubeSize, squareToQuad, type Point, type Verdict } from "@/lib/check";
 import { Follower, type Report } from "@/lib/follow";
-import { PX_PER_STICKER, cellCentres, checkN, readable } from "@/lib/nxn-check";
+import { PX_PER_STICKER, cellCentres, checkN, layerEdges, measuredRatio, readable } from "@/lib/nxn-check";
 import { EVENT_NAME } from "@/lib/nxn";
 import { match, netOf, prepare, type Match, type Scramble } from "@/lib/scrambles";
 import { CornerSmoother } from "@/lib/smooth";
@@ -33,6 +33,7 @@ interface Frame {
   width: number;
   height: number;
   n: number;
+  edges: number[] | undefined; // where the layers end on each face (uneven on a big cube), none: equal
   corners: Point[] | null;
   centres: Point[] | null;
   match: Match | null;
@@ -91,8 +92,10 @@ export function Checker() {
   const valid = scrambles.filter((s) => s.state);
   const following = mode === "follow";
   const target: Scramble | undefined = following ? valid.find((s) => s.number === followed) ?? valid[0] : undefined;
-  const latest = useRef({ models, scrambles, following, target, size, valid });
-  latest.current = { models, scrambles, following, target, size, valid };
+  // Big cubes have thicker outer layers: the grid follows the measured widths (6×6, 7×7), even elsewhere.
+  const r = measuredRatio(size), edges = r === 1 ? undefined : layerEdges(size, r);
+  const latest = useRef({ models, scrambles, following, target, size, valid, edges });
+  latest.current = { models, scrambles, following, target, size, valid, edges };
 
   useEffect(() => {
     try {
@@ -179,7 +182,7 @@ export function Checker() {
     const gc = g.getContext("2d", { willReadFrequently: true })!;
     gc.drawImage(source, 0, 0, w, h);
     const now = t0 / 1000, s = smoother.current;
-    const { models: m, scrambles: list, following: fol, target: t, size: n } = latest.current;
+    const { models: m, scrambles: list, following: fol, target: t, size: n, edges: e } = latest.current;
     const found = await findCube(m!, g, live && s.fresh(now) ? s.kp : null, work.current!);
     const corners = !found.corners ? (s.reset(), null) : live ? s.update(found.corners, now) : found.corners;
     let result: Match | null = null, tooSmall = false, where: Frame["now"] = null;
@@ -187,7 +190,7 @@ export function Checker() {
     if (corners && against.some((x) => x.state)) {
       tooSmall = cubeSize(corners) < minCubePx(n);
       if (!tooSmall) {
-        const probs = await readStickers(m!, gc.getImageData(0, 0, w, h), corners, n), inside = readable(corners, n, w, h);
+        const probs = await readStickers(m!, gc.getImageData(0, 0, w, h), corners, n, e), inside = readable(corners, n, w, h);
         if (fol && follower.current) {
           const r = follower.current.look(probs, inside), st = steady.current;
           if (r.clear) {
@@ -224,7 +227,7 @@ export function Checker() {
     const key = result ? `${result.status}:${result.scramble?.number ?? 0}` : "";
     history.current = !result ? [] : live ? [...history.current, key].slice(-HISTORY) : [key];
     setSettled(live ? settle(history.current) : key);
-    setFrame({ width: w, height: h, n, corners, centres: corners && cellCentres(corners, n), match: result, tooSmall, ms: performance.now() - t0, now: where });
+    setFrame({ width: w, height: h, n, edges: e, corners, centres: corners && cellCentres(corners, n, e), match: result, tooSmall, ms: performance.now() - t0, now: where });
   }, []);
 
   useEffect(() => {
@@ -486,8 +489,9 @@ function drawOverlay(canvas: HTMLCanvasElement | null, video: HTMLElement | null
   for (const quad of FACE_QUADS) {
     const map = squareToQuad(quad.map((j) => k[j]));
     for (let t = 1; t < frame.n; t++) {
-      line([map(t / frame.n, 0), map(t / frame.n, 1)]);
-      line([map(0, t / frame.n), map(1, t / frame.n)]);
+      const at = frame.edges ? frame.edges[t] : t / frame.n;
+      line([map(at, 0), map(at, 1)]);
+      line([map(0, at), map(1, at)]);
     }
   }
   c.strokeStyle = "#5cc8e6";
