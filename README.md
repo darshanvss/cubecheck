@@ -15,7 +15,7 @@
 - **TNoodle PDFs.** Open a group's Computer Display PDF (with its passcode) or the printing PDF (with the competition password), then pick the event, round and group. The PDF is read in the browser and kept only in memory. A PDF that isn't a TNoodle scramble sheet is refused.
 - **Checks against the whole list.** It finds which scramble the cube in view matches, or says it matches none.
 - **Follow-along (beta).** It follows one scramble move by move from solved, says the moment a move goes wrong, and shows the way back. See [docs/follow-along.md](docs/follow-along.md).
-- **Big cubes as they're really made.** A 6×6 or 7×7 has thicker outer layers; the sticker grid follows the measured widths, and an **Outer layers** setting covers other makes (4×4 to 7×7).
+- **Big cubes as they're really made.** A 6×6 or 7×7 has thicker outer layers, and the sticker grid follows the measured widths.
 - **Skewb, pyraminx and FTO (experimental).** Checked and followed the same way, each with its own models. See [docs/other-puzzles.md](docs/other-puzzles.md).
 
 ## How it works
